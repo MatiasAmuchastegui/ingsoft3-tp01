@@ -16,4 +16,7 @@ Para que nunca hubiera aparecido, tendría que haber evitado que las dos ramas t
 
 ## 3. Declaración de uso de IA
 
-Usé Claude para redactar la versión final de `evidencias.md`, a partir de contarle qué había hecho, qué capturas tenía y qué problemas encontré.
+
+Usé IA (Claude) durante el desarrollo del TP para entender conceptos de Git que la guía introduce — sobre todo cómo funciona un merge de 3 vías, la diferencia entre un rechazo por protección de rama y un rechazo por estar desactualizado, y por qué el reviewer no puede aprobar su propio PR en GitHub. Verifiqué esas explicaciones contrastándolas con el marco teórico de la guía de la cátedra (§3.4 y §3.6) y con lo que efectivamente veía en mi propio repositorio y mis propias capturas.
+
+También usé Claude para redactar la versión final de este archivo y de `evidencias.md`, a partir de contarle qué había hecho, qué capturas tenía y qué problemas encontré. Verifiqué el resultado revisando cada captura contra la descripción que se le puso, y corrigiendo cuando la interpretación automática no coincidía con lo que realmente pasó — por ejemplo, la primera lectura de la captura del push rechazado asumía que probaba la protección de rama, y yo aclaré que el mensaje correspondía a un rechazo por estar desactualizado, no confirmado como rechazo por protección, lo cual quedó reflejado en el punto 2 de este documento.
