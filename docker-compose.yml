@@ -1,0 +1,169 @@
+# Sistema completo: base de datos + backend + frontend.
+#
+#   cp .env.example .env
+#   docker compose up -d
+#
+# Después: http://localhost:8080
+#
+# (Para desarrollo, cuando el backend y el frontend corren en la máquina y sólo la base
+#  va en contenedor, está docker-compose.dev.yml.)
+
+name: joyeria
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # Base de datos
+  # ---------------------------------------------------------------------------
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+    # Los datos viven en un volumen con nombre, NO dentro del contenedor. Es lo que
+    # hace que "down" y "up" conserven todo, y que sólo "down -v" borre el volumen
+    # y con él la base entera.
+    volumes:
+      - db-data:/var/lib/postgresql/data
+
+    # El healthcheck es lo que le permite al backend esperar de verdad. pg_isready
+    # responde "listo" únicamente cuando el motor acepta conexiones: el contenedor
+    # arranca en un segundo, pero PostgreSQL tarda varios más en estar disponible.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+    # Sin "ports": la base NO se publica al host. Sólo el backend la alcanza, por la
+    # red interna. Para inspeccionarla a mano:
+    #   docker compose exec db psql -U joyeria -d joyeria
+    networks:
+      - interna
+
+  # ---------------------------------------------------------------------------
+  # Backend (API)
+  # ---------------------------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: ${IMAGE_PREFIX:-joyeria}/backend:${IMAGE_TAG:-dev}
+    restart: unless-stopped
+
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+
+      # "db" es el NOMBRE DEL SERVICIO de este compose, y Docker lo resuelve por DNS
+      # dentro de la red. Acá está el tropiezo clásico: en la máquina la base está en
+      # localhost, pero dentro de un contenedor "localhost" es el contenedor mismo.
+      # Por eso la cadena de conexión tenía que ser configurable por variable de
+      # entorno: no se toca una línea de código para pasar de local a contenedores.
+      ConnectionStrings__Default: "Host=db;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+
+      Jwt__Key: ${JWT_KEY}
+      Jwt__MinutosDeVida: ${JWT_MINUTOS_DE_VIDA:-480}
+
+      # El TP pide que un solo comando deje el sistema usable, así que acá se activan
+      # a mano. En un despliegue real van en false: la migración es un paso del
+      # pipeline y sembrar un admin con contraseña conocida es un agujero.
+      AplicarMigracionesAlArrancar: "true"
+      SembrarDatosIniciales: "true"
+      Seed__EmailAdmin: ${SEED_EMAIL_ADMIN:-admin@joyeria.local}
+      Seed__NombreAdmin: ${SEED_NOMBRE_ADMIN:-Administradora}
+      Seed__PasswordAdmin: ${SEED_PASSWORD_ADMIN}
+      Seed__PasswordVendedor: ${SEED_PASSWORD_VENDEDOR}
+
+    # "condition: service_healthy" y no un depends_on simple. El depends_on pelado sólo
+    # ordena el ARRANQUE: levanta db antes que backend y sigue de largo sin esperar a
+    # que PostgreSQL acepte conexiones. El backend arrancaría contra una base que
+    # todavía no responde y se caería al intentar migrar. Con la condición, Compose
+    # espera a que el healthcheck de db dé "healthy".
+    depends_on:
+      db:
+        condition: service_healthy
+
+    # 127.0.0.1 y no localhost: dentro del contenedor, localhost resuelve también a ::1
+    # (IPv6) y Kestrel escucha sólo en IPv4. Con "localhost" el healthcheck puede
+    # intentar por IPv6 y recibir "connection refused" con el servicio perfectamente sano.
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+    # Sin "ports": el backend tampoco se publica. Sólo nginx lo alcanza, y el navegador
+    # llega a la API por /api gracias al proxy.
+    # Para pegarle directo desde la máquina (diagnóstico), descomentar:
+    #   ports:
+    #     - "5080:8080"
+    networks:
+      - interna
+      - publica
+
+  # ---------------------------------------------------------------------------
+  # Frontend (nginx sirviendo la SPA + proxy a la API)
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Vacío = mismo origen. El bundle pide /api/... y nginx lo reenvía.
+        VITE_API_URL: ""
+    image: ${IMAGE_PREFIX:-joyeria}/frontend:${IMAGE_TAG:-dev}
+    restart: unless-stopped
+
+    # El ÚNICO puerto publicado del sistema. Acá sí se mapea host:contenedor —
+    # el EXPOSE 80 del Dockerfile sólo documentaba, esta línea es la que publica.
+    ports:
+      - "${PUERTO_FRONTEND:-8080}:80"
+
+    depends_on:
+      backend:
+        condition: service_healthy
+
+    healthcheck:
+      # wget viene en la imagen alpine (busybox); curl no. Y sólo las opciones que
+      # busybox soporta: -q, --spider y -T. "--tries" es de GNU wget, no existe acá.
+      #
+      # 127.0.0.1 y no localhost: nginx escucha en 0.0.0.0:80 (IPv4), pero el
+      # /etc/hosts del contenedor mapea localhost también a ::1. Con "localhost",
+      # busybox wget intenta por IPv6 y recibe "connection refused" — el contenedor
+      # queda unhealthy para siempre con nginx andando perfectamente.
+      test: ["CMD", "wget", "-q", "--spider", "-T", "3", "http://127.0.0.1/nginx-health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+    networks:
+      - publica
+
+# ---------------------------------------------------------------------------
+# Redes
+# ---------------------------------------------------------------------------
+# Dos redes en lugar de una, para que el frontend no tenga forma de llegar a la base:
+#
+#   publica : frontend <-> backend
+#   interna : backend  <-> db
+#
+# El backend está en las dos porque es el único que necesita hablar con ambos lados.
+# La base está sólo en "interna", así que ni el frontend ni el host la alcanzan.
+networks:
+  publica:
+    driver: bridge
+  interna:
+    driver: bridge
+
+# ---------------------------------------------------------------------------
+# Volúmenes
+# ---------------------------------------------------------------------------
+volumes:
+  db-data:

@@ -14,3 +14,16 @@ build/
 Thumbs.db
 .vscode/
 .idea/
+
+# ---- .NET (TP2: la app del semestre) ----
+**/TestResults/
+.vs/
+*.user
+*.suo
+
+# ---- Vite / TypeScript ----
+*.tsbuildinfo
+.vite/
+
+# ---- Herramientas ----
+.claude/settings.local.json
