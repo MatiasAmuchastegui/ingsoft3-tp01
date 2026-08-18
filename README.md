@@ -46,6 +46,11 @@ docker compose down -v    # borra los datos (elimina el volumen)
 
 > En Windows con PowerShell, `cp` funciona igual (es alias de `Copy-Item`).
 
+> **Si clonás en una carpeta muy profunda y Windows te dice `Filename too long`:** el límite
+> histórico de 260 caracteres por ruta. La ruta más larga de este repo mide 104, así que hay
+> lugar de sobra en una carpeta normal, pero si la tuya es larga, corré una vez
+> `git config --global core.longpaths true` y volvé a clonar.
+
 ### Qué se levanta
 
 ```
