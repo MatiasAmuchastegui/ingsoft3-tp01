@@ -1,0 +1,93 @@
+# El mismo sistema, pero BAJANDO las imágenes del registry en lugar de compilarlas.
+#
+#   cp .env.example .env
+#   docker compose -f docker-compose.registry.yml up -d
+#
+# Diferencia con docker-compose.yml: acá no hay ni una sola línea "build:". Nadie que
+# corra este archivo necesita el código fuente, ni el SDK de .NET, ni Node — sólo Docker.
+#
+# Es la idea que la materia va a usar de acá en adelante: la imagen taggeada en un
+# registry ES el artefacto de release. Lo que se probó en QA es exactamente lo que corre
+# en producción, bit a bit, porque es la misma imagen y no una recompilación.
+#
+# Publicar las imágenes (después de "docker compose build"):
+#   echo $env:GHCR_TOKEN | docker login ghcr.io -u <tu-usuario> --password-stdin
+#   docker compose push
+
+name: joyeria-registry
+
+services:
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - interna
+
+  backend:
+    # Sin "build": la imagen se baja del registry, con su tag semver.
+    image: ${IMAGE_PREFIX}/backend:${IMAGE_TAG}
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Default: "Host=db;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      Jwt__Key: ${JWT_KEY}
+      Jwt__MinutosDeVida: ${JWT_MINUTOS_DE_VIDA:-480}
+      AplicarMigracionesAlArrancar: "true"
+      SembrarDatosIniciales: "true"
+      Seed__EmailAdmin: ${SEED_EMAIL_ADMIN:-admin@joyeria.local}
+      Seed__NombreAdmin: ${SEED_NOMBRE_ADMIN:-Administradora}
+      Seed__PasswordAdmin: ${SEED_PASSWORD_ADMIN}
+      Seed__PasswordVendedor: ${SEED_PASSWORD_VENDEDOR}
+    depends_on:
+      db:
+        condition: service_healthy
+    # 127.0.0.1 y no localhost: dentro del contenedor localhost resuelve también a ::1
+    # y Kestrel escucha sólo en IPv4. Ver docker-compose.yml para el detalle.
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - interna
+      - publica
+
+  frontend:
+    image: ${IMAGE_PREFIX}/frontend:${IMAGE_TAG}
+    restart: unless-stopped
+    ports:
+      - "${PUERTO_FRONTEND:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "-T", "3", "http://127.0.0.1/nginx-health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - publica
+
+networks:
+  publica:
+    driver: bridge
+  interna:
+    driver: bridge
+
+volumes:
+  db-data:

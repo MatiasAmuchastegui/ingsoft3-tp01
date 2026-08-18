@@ -1,0 +1,20 @@
+# node_modules es lo más importante de esta lista: pesa cientos de MB y trae binarios
+# compilados para Windows que no sirven dentro de una imagen Linux. Las dependencias se
+# instalan adentro del contenedor con "npm ci", no se copian de afuera.
+node_modules/
+
+# Artefactos de build: la imagen genera su propio dist/
+dist/
+dist-ssr/
+*.tsbuildinfo
+.vite/
+
+# Secretos: el .env real nunca entra a la imagen. Las variables VITE_* se pasan como
+# build args, porque Vite las congela en el bundle al compilar.
+.env
+.env.*
+!.env.example
+
+# El propio Docker no se copia adentro de la imagen
+Dockerfile
+.dockerignore

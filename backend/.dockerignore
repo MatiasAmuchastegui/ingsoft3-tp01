@@ -1,0 +1,18 @@
+# Todo lo que no debe entrar al contexto de build.
+# Sin esto, Docker copia bin/ y obj/ de la máquina al contexto: build más lento y,
+# peor, artefactos compilados en Windows filtrándose a una imagen Linux.
+
+**/bin/
+**/obj/
+**/.vs/
+**/*.user
+**/*.suo
+
+# Configuración local y secretos
+**/appsettings.Local.json
+**/.env
+**/*.pfx
+
+# El propio Docker no se copia adentro de la imagen
+Dockerfile
+.dockerignore
