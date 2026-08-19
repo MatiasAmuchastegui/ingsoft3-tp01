@@ -20,3 +20,270 @@ Para que nunca hubiera aparecido, tendría que haber evitado que las dos ramas t
 Usé IA (Claude) durante el desarrollo del TP para entender conceptos de Git que la guía introduce — sobre todo cómo funciona un merge de 3 vías, la diferencia entre un rechazo por protección de rama y un rechazo por estar desactualizado, y por qué el reviewer no puede aprobar su propio PR en GitHub. Verifiqué esas explicaciones contrastándolas con el marco teórico de la guía de la cátedra (§3.4 y §3.6) y con lo que efectivamente veía en mi propio repositorio y mis propias capturas.
 
 También usé Claude para redactar la versión final de este archivo y de `evidencias.md`, a partir de contarle qué había hecho, qué capturas tenía y qué problemas encontré. Verifiqué el resultado revisando cada captura contra la descripción que se le puso, y corrigiendo cuando la interpretación automática no coincidía con lo que realmente pasó — por ejemplo, la primera lectura de la captura del push rechazado asumía que probaba la protección de rama, y yo aclaré que el mensaje correspondía a un rechazo por estar desactualizado, no confirmado como rechazo por protección, lo cual quedó reflejado en el punto 2 de este documento.
+
+---
+
+# Decisiones — TP2
+
+## 1. Qué app elegí y por qué
+
+**Un sistema de gestión de stock para una joyería con tres locales.** Backend en ASP.NET Core 8
+con Entity Framework Core, frontend en React + Vite + TypeScript, base PostgreSQL 16.
+
+Es una aplicación **propia**, escrita para este semestre — no es un repo de GitHub adaptado ni un
+trabajo grupal de otra materia, que es lo que la guía pide evitar. Además es un proyecto real: la
+va a usar la dueña de una joyería, y eso le da reglas de negocio de verdad en lugar de inventadas.
+
+Contra los criterios de la guía (§3.3):
+
+| Criterio | Cómo lo cumple |
+|---|---|
+| **¿Buildea y corre localmente hoy?** | Sí, y por dos caminos probados: `docker compose up -d`, o sin Docker con `dotnet run` + `npm run dev` y sólo la base en contenedor |
+| **¿Tiene o puedo escribirle tests?** | Las reglas de negocio están en la capa de servicios, no en los controllers, así que se testean sin levantar HTTP. El proyecto `JoyeriaStock.Tests` ya está cableado con xUnit, vacío a la espera del TP5 |
+| **¿Entiendo el código para modificarlo?** | Sí, con el matiz honesto de la sección 5: lo escribí con asistencia de IA, revisando y verificando cada decisión |
+| **Tamaño** | Tres pantallas: Login, Catálogo (dos pestañas) y Stock. La guía avisa que más grande no suma nota, sólo fricción |
+
+**Dependencias**: sólo backend + frontend + PostgreSQL. Nada de Redis, colas ni APIs de terceros.
+
+**Reglas de negocio disponibles para el TP5**: SKU generado por el sistema y correlativo · SKU
+inmutable después del alta · categoría inmutable en un producto · prefijo único por categoría ·
+prefijo inmutable si ya emitió códigos · el stock nunca queda negativo · no se elimina una
+categoría con productos · un vendedor sólo ve y opera su propio local · transferencia entre
+locales atómica · un vendedor no puede transferir · un producto dado de baja no admite
+movimientos · el precio se congela en la venta.
+
+## 2. Decisiones de contenerización
+
+### Imágenes base
+
+| | Etapa de build | Etapa final |
+|---|---|---|
+| Backend | `mcr.microsoft.com/dotnet/sdk:8.0` | `mcr.microsoft.com/dotnet/aspnet:8.0` |
+| Frontend | `node:22-alpine` | `nginx:1.27-alpine` |
+
+**Por qué multi-stage.** Compilar y ejecutar necesitan cosas distintas. El SDK de .NET pesa 1,2 GB
+porque trae compilador, MSBuild y NuGet; para ejecutar alcanza el runtime, que son 320 MB. La
+imagen final quedó en **344 MB**: dentro hay 11 MB de aplicación publicada (33 ensamblados) más
+`curl`, y ni rastro del compilador ni del código fuente — menos peso y menos superficie de ataque.
+
+En el frontend el efecto es todavía más marcado, porque **el resultado de compilar son tres
+archivos estáticos**: 216 KB en total (188,9 KB de JavaScript y 5,7 KB de CSS). Servirlos no
+necesita Node, así que la etapa final es nginx con el `dist/` adentro. Si hubiera dejado Node y
+`node_modules`, la imagen habría rondado los 400 MB en lugar de 73,9 MB.
+
+**Versiones fijas, no `latest`.** `sdk:8.0` y no `sdk:latest`, para que el build de hoy y el de
+noviembre usen el mismo .NET. Usar `latest` es la forma más fácil de que un pipeline empiece a
+fallar sin que nadie haya cambiado nada.
+
+**Orden de las instrucciones.** En los dos Dockerfiles se copian primero los archivos de
+dependencias (`.csproj`, `package.json` + `package-lock.json`), se restauran, y recién después se
+copia el código. Así, cambiar una línea de código no vuelve a descargar todos los paquetes.
+En el frontend uso `npm ci` y no `npm install`: instala exactamente lo que dice el lockfile, sin
+volver a resolver versiones, que es lo que hace el build reproducible.
+
+**Instalé `curl` en la imagen del backend.** La imagen `aspnet` no lo trae, y sin él el healthcheck
+del compose no tiene con qué consultar `/health`. Sin healthcheck en el backend, el
+`condition: service_healthy` del frontend no sirve de nada. Cuesta unos MB y lo compro.
+
+**El backend corre como usuario sin privilegios** (`USER $APP_UID`, que la imagen base de .NET 8 ya
+define). Un proceso que no necesita root no corre como root.
+
+### nginx como proxy: el camino (a) de la guía
+
+Mi SPA llama a `/api/...` con ruta **relativa**, y nginx reenvía eso al backend por la red interna.
+Es la opción (a) de §2.6 de la guía, y la elegí por una razón concreta: **Vite congela las
+variables `VITE_*` dentro del bundle en tiempo de build**. Si la URL de la API se hornea al
+compilar, hacen falta imágenes distintas por entorno, y eso choca de frente con el requisito de
+release inmutable del TP7 ("lo que se prueba en QA es exactamente lo que corre en producción").
+
+Construyendo con `VITE_API_URL` vacía, la imagen no lleva ninguna URL adentro y sirve igual en
+cualquier entorno. Beneficio lateral: como para el navegador todo sale del mismo origen, **no hay
+CORS que configurar** en contenedores. Fuera de contenedores sí hace falta y está configurado,
+pero el problema desaparece en lugar de resolverse dos veces.
+
+Lo verifiqué buscando `localhost:5080` dentro del bundle de la imagen ya construida: no está, y la
+llamada quedó compilada como `/api/auth/login`.
+
+### `EXPOSE` contra `ports:`
+
+`EXPOSE 8080` en el backend y `EXPOSE 80` en el frontend son **documentación**: declaran en qué
+puerto escucha el proceso dentro de la red de contenedores. **No publican nada en el host.** Lo
+único que publica es `ports:`, y hay un solo `ports:` en todo el compose: el del frontend.
+
+Comprobado con el sistema levantado y sano: el `8080` responde desde la máquina, y el `5080` del
+backend y el `5432` de la base **no**.
+
+### Dos redes en lugar de una
+
+```
+publica : frontend <-> backend
+interna : backend  <-> db
+```
+
+El backend está en las dos porque es el único que necesita hablar con ambos lados. La base está
+sólo en `interna`, así que ni el frontend ni el host la alcanzan. El compose no lo exige y con una
+sola red también funcionaría; son seis líneas y dan una propiedad real: el servicio expuesto no
+tiene ruta hacia la base de datos.
+
+### Migraciones y datos de ejemplo
+
+El backend aplica las migraciones y carga los datos de ejemplo al arrancar, pero **sólo si dos
+interruptores están en `true`** (`AplicarMigracionesAlArrancar` y `SembrarDatosIniciales`). El
+compose del TP2 los activa, porque el requisito acá es que un solo comando deje el sistema usable.
+En un despliegue real van en `false`: la migración es un paso del pipeline (TP6), y sembrar un
+usuario admin con contraseña conocida en producción es un agujero.
+
+El seed es idempotente: si ya hay locales cargados no hace nada, así que reiniciar no duplica datos.
+
+## 3. Qué persiste y qué no
+
+**Persiste**: los datos de PostgreSQL, en el volumen con nombre `db-data` montado en
+`/var/lib/postgresql/data`.
+
+**No persiste nada más**, y es a propósito: las tres imágenes son inmutables y los contenedores
+descartables. No hay archivos subidos, ni caché en disco, ni logs escritos a un archivo — van a
+stdout, que es lo que Docker espera y lo que el TP9 va a necesitar para centralizarlos.
+
+| Comando | Contenedores | Volumen | Datos |
+|---|---|---|---|
+| `docker compose down` | se borran | **queda** | **sobreviven** |
+| `docker compose down -v` | se borran | se elimina | se pierden |
+
+La diferencia está en **dónde vive el dato**. Si PostgreSQL escribiera en el filesystem del
+contenedor, `down` se llevaría todo, porque la capa de escritura de un contenedor muere con él. El
+volumen es almacenamiento que Docker administra **aparte del ciclo de vida del contenedor**, y por
+eso `down` no lo toca: hay que pedirlo explícitamente con `-v`.
+
+Está verificado en `evidencias.md` creando un producto que no viene del seed y siguiéndolo a través
+de los dos comandos.
+
+## 4. Problemas que encontré y cómo los resolví
+
+### El token de concurrencia sobre `xmin` no era viable
+
+Para que dos ventas simultáneas no dejaran el stock negativo probé la concurrencia optimista sobre
+la columna de sistema `xmin` de PostgreSQL. `UseXminAsConcurrencyToken()` rompió el build con
+`CS0618: está obsoleto` — el proyecto compila con `TreatWarningsAsErrors`. Al configurarlo a mano
+como indica la guía de migración de Npgsql 8, la migración generada creaba una columna llamada
+`xmin`, que PostgreSQL rechaza porque es un nombre de columna de sistema reservado.
+
+Lo encontré **leyendo el archivo de migración antes de aplicarlo**, no cuando explotó. Lo reemplacé
+por un `CHECK (cantidad >= 0)` sobre la tabla `stocks`: cubre el mismo caso con menos maquinaria y
+la garantía es más fuerte, porque vale también para un `UPDATE` escrito a mano en psql y no sólo
+para lo que pasa por Entity Framework.
+
+### `dotnet ef database update --no-build` dijo "already up to date" sin aplicar nada
+
+Generé la migración, corrí `database update --no-build` y me contestó *"No migrations were applied.
+The database is already up to date"*… con la base vacía, sin una sola tabla.
+
+La causa: `--no-build` usa el último binario compilado. Como generé la migración **después** de
+compilar, el DLL no la contenía; para EF no existía ninguna migración, así que efectivamente estaba
+todo al día. Se arregla compilando entre generar y aplicar, o directamente no usando `--no-build`.
+Quedó anotado en el README porque es de los errores que no dan ninguna pista.
+
+### El healthcheck del frontend fallaba por IPv6, con nginx impecable
+
+`docker compose ps` mostraba el frontend `unhealthy` **con la aplicación funcionando y todas las
+verificaciones en verde**. El healthcheck usaba `http://localhost/nginx-health`; dentro del
+contenedor `/etc/hosts` mapea `localhost` a `127.0.0.1` **y** a `::1`, busybox wget intentaba por
+IPv6, y nginx escucha sólo en `0.0.0.0:80`. Resultado: `connection refused` para siempre.
+
+Importaba más de lo que parece: el `depends_on: condition: service_healthy` que apunta al frontend
+quedaba decorativo, y en el TP6 cualquier gate de despliegue basado en la salud del servicio nunca
+habría aprobado. Se arregló poniendo `127.0.0.1` explícito en los healthchecks de los dos compose,
+y usando sólo las opciones que busybox soporta (`--tries` es de GNU wget y no existe ahí).
+
+El healthcheck del backend tuvo el problema hermano: fallaba porque la imagen `aspnet` no trae
+`curl` ni `wget`. Por eso lo instalo en el Dockerfile. Son dos comandos distintos en cada
+contenedor porque son dos imágenes base distintas.
+
+### Los productos nuevos no aparecían en la pantalla de Stock
+
+Este no lo encontró ningún test: apareció **usando la aplicación**. Cargaba una categoría
+"Relojes", le daba de alta un reloj… y el producto no aparecía nunca en la pantalla de Stock. Y
+como los movimientos se registran desde una fila de esa pantalla, no había forma de darle unidades:
+quedaba invisible para siempre.
+
+La causa era coherente con el diseño: una fila de `stocks` sólo nace cuando se registra el primer
+movimiento de ese producto en ese local, y la consulta partía de esas filas. Los productos del seed
+no mostraban el problema porque el seeder les crea las filas a mano. Lo resolví haciendo que la
+consulta parta de **productos × locales** con `LEFT JOIN` contra `stocks`, mostrando 0 donde no hay
+fila. Así se arregla también el caso simétrico —abrir un local nuevo— sin tener que crear filas
+para todo el catálogo.
+
+**La lección**: las verificaciones automatizadas estaban todas en verde mientras el bug existía,
+porque todas partían de los datos del seed. Una batería verde no reemplaza usar el sistema.
+
+### `tsc -b` fallaba con `TS6310`
+
+`npm run build` cortaba con *"Referenced project may not disable emit"*. La plantilla de Vite parte
+la configuración de TypeScript en dos proyectos con `references`, lo que obliga a `composite: true`,
+y eso es incompatible con el `noEmit: true` del proyecto referenciado. Lo resolví con un solo
+`tsconfig.json` que incluye `src` y `vite.config.ts`, y `tsc --noEmit && vite build`. La
+verificación de tipos sigue siendo estricta y sigue corriendo antes del build, que es lo que el
+gate de calidad del TP4 va a necesitar.
+
+### `Filename too long` al clonar el repositorio
+
+Probando el arranque como lo haría un corrector —clonar en una carpeta limpia y seguir el README—
+el checkout falló con `Filename too long`: el límite histórico de 260 caracteres por ruta de
+Windows. Medí: la ruta más larga del repositorio son 104 caracteres (un archivo de migración de EF)
+y la carpeta donde estaba probando medía 160, así que sumaban 264. En una carpeta normal sobra
+lugar, pero quedó documentado en el README con la solución (`git config --global core.longpaths true`).
+
+### El tropiezo que la cátedra anticipa y no me pasó
+
+La guía avisa que el error más común es dejar `localhost` en la cadena de conexión. No me pasó, y
+vale la pena explicar por qué: **desde el principio la cadena de conexión fue una variable de
+entorno y no un literal en el código**. Al pasar a contenedores sólo cambió el valor
+(`Host=localhost` → `Host=db`), sin tocar una línea.
+
+Adentro de un contenedor `localhost` es el contenedor mismo, no la máquina: el backend buscaría
+PostgreSQL dentro de su propio contenedor y no lo encontraría. `db` es el nombre del servicio en el
+compose, que Docker resuelve por DNS dentro de la red.
+
+Lo mismo con el segundo tropiezo, el backend arrancando antes que la base: `depends_on` pelado sólo
+ordena el arranque y sigue de largo. Hace falta `condition: service_healthy` para que Compose
+espere a que `pg_isready` confirme que el motor acepta conexiones. El contenedor de PostgreSQL
+arranca en un segundo; el motor tarda varios más.
+
+## 5. Declaración de uso de IA
+
+**Herramienta**: Claude (Claude Code), trabajando sobre este repositorio.
+
+**Qué se hizo con IA**: prácticamente todo el código de la aplicación —entidades y configuraciones
+de EF, los servicios con las reglas de negocio, los controllers, el middleware de errores, el
+frontend completo— además de los dos Dockerfiles, los tres archivos de compose, el `nginx.conf`, y
+la primera redacción de este documento, de `evidencias.md` y del README.
+
+**Qué aporté yo**: la elección del dominio y del stack, el modelo de datos inicial, las reglas de
+negocio, las restricciones de la cátedra, y las decisiones cuando había que elegir entre
+alternativas (JWT propio en lugar de ASP.NET Identity, ghcr.io en lugar de Docker Hub, monolito en
+lugar de microservicios, tres pantallas en lugar de cinco). También la conversación con la dueña de
+la joyería sobre cómo trabajan de verdad, que cambió cosas del diseño, y las pruebas manuales que
+encontraron el bug de los productos invisibles.
+
+**Cómo lo verifiqué** — esto es lo que me permite defenderlo:
+
+1. **Nada se dio por bueno porque compilara.** Hay 80 verificaciones automatizadas de las reglas de
+   negocio contra la API corriendo, y se corrieron en tres contextos distintos: contra el backend
+   local, contra el sistema en contenedores a través de nginx, y contra las imágenes bajadas del
+   registry.
+2. **El esquema de la base lo revisé en `psql`**, tabla por tabla, para confirmar que el `CHECK`, el
+   índice único y las claves foráneas en `RESTRICT` existían de verdad y no sólo en el código.
+3. **Leí cada migración antes de aplicarla.** Ahí encontré el problema de la columna `xmin`, que
+   habría explotado en el primer `up` de otra persona.
+4. **Inspeccioné el bundle compilado por dentro** para confirmar que no tenía la URL de la API
+   horneada, en lugar de asumir que el build arg había funcionado.
+5. **La persistencia la probé destruyéndola**: creando un dato que no viene del seed y siguiéndolo a
+   través de `down`/`up` y de `down -v`/`up`.
+6. **Usé la aplicación como usuario.** El bug de los productos invisibles no lo encontró ningún
+   test: apareció cargando un reloj a mano desde la interfaz.
+7. **Varias fallas resultaron ser de mis propios scripts de prueba y no del sistema** — por ejemplo
+   un `400` que parecía un bug del backend y era que PowerShell mandaba el cuerpo sin declarar
+   UTF-8, así que un nombre con tilde llegaba corrupto. Las corregí y las dejo anotadas porque
+   distinguir "falla el sistema" de "falla mi prueba" fue parte del trabajo.
+
+**Qué significa esto**: puedo explicar por qué cada decisión es como es, y este documento existe
+para eso. Lo que no puedo decir es que escribí el código a mano.
