@@ -1,0 +1,14 @@
+# Integración continua: verifica cada Pull Request antes de que entre a main.
+#
+# Hoy es el esqueleto: se dispara y hace checkout. Los pasos reales de build y
+# tests del backend (.NET 8) y del frontend (Node + Vite) se agregan en el TP4,
+# junto con la publicación del reporte como artefacto (tarea #13).
+name: CI
+
+on: [pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
