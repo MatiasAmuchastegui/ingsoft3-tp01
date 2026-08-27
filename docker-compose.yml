@@ -6,7 +6,7 @@
 # Después: http://localhost:8080
 #
 # (Para desarrollo, cuando el backend y el frontend corren en la máquina y sólo la base
-#  va en contenedor, está docker-compose.dev.yml.)
+#  va en contenedor, el README tiene el "docker run" de PostgreSQL suelto.)
 
 name: joyeria
 
