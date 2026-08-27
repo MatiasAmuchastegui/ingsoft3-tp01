@@ -211,8 +211,8 @@ dotnet tool install --global dotnet-ef --version 8.*
 ### Los tres pasos
 
 ```powershell
-# 1. Sólo la base, en contenedor
-docker compose -f docker-compose.dev.yml up -d
+# 1. Sólo la base, en contenedor (una vez; después alcanza con `docker start joyeria-db`)
+docker run -d --name joyeria-db -p 5432:5432 -e POSTGRES_DB=joyeria -e POSTGRES_USER=joyeria -e POSTGRES_PASSWORD=joyeria_dev -v joyeria-db-dev:/var/lib/postgresql/data postgres:16-alpine
 
 # 2. Backend (una terminal)
 cd backend\JoyeriaStock.Api
@@ -235,13 +235,12 @@ arrancar, así que no hay un paso de migración aparte. Si preferís hacerlo exp
 
 ---
 
-## Los tres archivos de compose
+## Los dos archivos de compose
 
 | Archivo | Para qué | Publica |
 |---|---|---|
 | `docker-compose.yml` | Sistema completo, compilando desde el código | `8080` (frontend) |
 | `docker-compose.registry.yml` | Sistema completo, bajando las imágenes del registry | `8080` (frontend) |
-| `docker-compose.dev.yml` | Sólo PostgreSQL, para desarrollo local | `5432` (base) |
 
 ---
 
@@ -312,7 +311,6 @@ restricción de la base la cierra.
 │  └─ probar-compose.ps1       persistencia, aislamiento de red y ruteo de la SPA
 ├─ docker-compose.yml          sistema completo (build local)
 ├─ docker-compose.registry.yml sistema completo (imágenes del registry)
-├─ docker-compose.dev.yml      sólo PostgreSQL, para desarrollo
 ├─ .env.example                plantilla de configuración (SÍ se commitea)
 └─ README.md
 ```
