@@ -287,3 +287,194 @@ encontraron el bug de los productos invisibles.
 
 **Qué significa esto**: puedo explicar por qué cada decisión es como es, y este documento existe
 para eso. Lo que no puedo decir es que escribí el código a mano.
+
+---
+
+# Decisiones — TP3
+
+## 1. Duración del sprint y por qué
+
+**Elegí una semana.**
+
+El criterio no fue "qué duración es la mejor" en abstracto, sino **cuánto tarda en llegarme la
+información que necesito para corregir el rumbo**. En esta materia el ciclo de realimentación es
+semanal: hay una clase por semana, y entre clase y clase es cuando entiendo si lo que planifiqué
+tenía sentido. Un sprint más largo que ese ciclo significa enterarme de que planifiqué mal cuando
+ya no me queda margen para reaccionar.
+
+Los tres factores que pesaron:
+
+| Factor | Cómo empuja la decisión |
+|---|---|
+| Cadencia de la materia | Una clase por semana. El sprint alineado con ella cierra justo cuando llega la corrección |
+| Tamaño del equipo | Uno solo. Con una persona, la ceremonia de un sprint largo no compra nada: no hay que sincronizar a nadie |
+| Tamaño del trabajo | Cada TP entra cómodo en una semana. Dos semanas me obligarían a partir un TP al medio o a mezclar dos |
+
+Lo que gano concretamente: si sobreestimé lo que entraba en el sprint, lo descubro en siete días y
+no en catorce. El costo es más ceremonia por unidad de tiempo —cerrar y abrir sprint el doble de
+veces— y lo acepto porque con una sola persona esa ceremonia son diez minutos.
+
+Un sprint de dos semanas tendría sentido si el trabajo dependiera de terceros con tiempos de
+respuesta largos, o si el equipo fuera lo bastante grande como para que la coordinación costara
+más que la realimentación tardía. Ninguna de las dos cosas pasa acá.
+
+**Sprint 1** arranca el 2026-08-30 y dura 7 días. Contiene la historia #11 y sus dos tareas, #12 y
+#13. La épica #10 no entra a ningún sprint —es el paraguas del semestre entero— y el bug #14 queda
+en el backlog, priorizado pero sin comprometer.
+
+## 2. Límite de trabajo en progreso y por qué
+
+**Puse 2 en la columna *In Progress*.**
+
+El límite no está para medir productividad, está para **hacer visible el costo de empezar cosas
+sin terminarlas**. Cuando tengo cuatro tarjetas abiertas, ninguna avanza: cada vez que cambio de
+una a otra pago el costo de recordar dónde estaba, y el trabajo a medio hacer no le sirve a nadie
+hasta que se termina. Un ítem sin terminar tiene valor cero.
+
+Elegí **2** y no 1 ni 3 por una razón práctica: con 1 me quedo bloqueado cada vez que algo depende
+de esperar —un run de CI que tarda, una revisión, algo que tengo que consultar—, y quedarme sin
+hacer nada por respetar el tablero sería el tablero mandando sobre el trabajo. Con 2 tengo exactamente
+una tarjeta a la que pasar cuando la primera se traba, y ni una más. Con 3 el límite deja de
+apretar: nunca lo tocaría, y un límite que nunca se toca no informa nada.
+
+La regla que se sigue del límite es la que importa: **cuando la columna está llena, no se empieza
+nada nuevo — se ayuda a terminar lo que ya está ahí.** El límite convierte "estoy ocupado" en
+"estoy trabado", que es una información distinta y mucho más útil.
+
+Lo comprobé en el tablero: al arrastrar una tercera tarjeta a *In Progress*, GitHub marca la
+columna en rojo y muestra el conteo por encima del límite, **pero deja pasar la tarjeta**. Es un
+aviso, no un candado. Eso está bien: el límite es un acuerdo de trabajo, y si en un caso puntual
+hay que romperlo, lo que uno quiere es verlo y decidirlo, no que la herramienta lo impida en
+silencio.
+
+Estado con el que quedó el tablero al cierre del sprint 1: la historia #11 y su tarea pendiente
+#13 en *In Progress* —exactamente el límite—, la tarea #12 en *Done*, y la épica #10 y el bug #14
+en *Todo*.
+
+## 3. Diagnóstico de la historia mal escrita
+
+El enunciado pide identificar por qué una historia como
+
+> **Como** usuario **quiero** que el CI funcione bien **para** que todo ande
+
+está mal escrita. Tiene tres problemas distintos, y conviene separarlos porque se arreglan de
+maneras distintas.
+
+**a) El rol no identifica a nadie.** "Usuario" es todo el mundo, y por lo tanto nadie. El rol
+existe para poder preguntarle a alguien concreto si la historia le resuelve algo; si el rol es
+genérico, no hay a quién preguntarle y la historia no se puede validar. En mi caso el rol es
+*desarrollador*, que es quien abre los PR y a quien le sirve que el pipeline los verifique.
+
+**b) El "quiero" describe un estado, no un comportamiento.** "Que funcione bien" no dice qué hace
+el sistema. No se puede implementar porque no dice qué construir, y no se puede probar porque no
+dice qué observar. La corrección es reemplazar el adjetivo por una acción visible: *que cada Pull
+Request ejecute el build y los tests automáticamente*. Eso sí se puede mirar y decir sí o no.
+
+**c) El "para" no expresa valor.** "Para que todo ande" es una repetición del "quiero" con otras
+palabras, no una razón. La parte del *para* es la que permite decidir si la historia vale la pena
+y priorizarla contra otra; si no dice qué mejora, no sirve para priorizar. La versión útil dice
+qué evita: *para detectar regresiones antes del merge, y no después*.
+
+**El problema de fondo es uno solo: la historia no es verificable.** No hay forma de pararse frente
+a ella y decir "esto está hecho" sin que sea una opinión. Y una historia que no se puede dar por
+terminada tampoco se puede estimar, ni priorizar, ni cerrar.
+
+Así quedó la mía (#11), y la diferencia se ve en los criterios de aceptación, que son la prueba de
+que la reescritura funcionó — cada uno se comprueba mirando algo, no discutiéndolo:
+
+| Criterio | Cómo se comprueba |
+|---|---|
+| Corre en cada PR contra `main` | Se abre un PR y aparece el check en la página del PR |
+| Un test que falla bloquea el merge | Se rompe un test a propósito: el botón de merge queda deshabilitado |
+| El reporte queda como artefacto | En la pestaña Actions, el run tiene un artefacto descargable |
+| El badge está en el README | Se ve en la portada del repositorio y cambia de color según el último run |
+
+Y el mismo criterio de "que se pueda verificar" es el que separa los tres tipos de ítem que usé:
+
+- La **épica** (#10) no lleva criterios de aceptación a propósito: no se verifica por sí misma, se
+  cierra cuando sus historias están cerradas.
+- La **historia** (#11) lleva criterios porque es la unidad que entrega valor observable.
+- Las **tareas** (#12, #13) no llevan criterios sino una lista de trabajo concreto: son el *cómo*
+  interno de la historia, y quien pide la historia no debería tener que leerlas.
+- El **bug** (#14) va al costado de la jerarquía y no colgando de ninguna historia, porque es un
+  defecto sobre algo ya entregado —el TP2— y no parte de un incremento nuevo. Por eso lleva pasos
+  para reproducirlo, comportamiento observado y comportamiento esperado, que es lo que hace falta
+  para arreglarlo.
+
+## 4. Trazabilidad: la vuelta completa
+
+La cadena que pide el práctico quedó cerrada de punta a punta, y se puede recorrer en los dos
+sentidos sin salir de GitHub:
+
+```
+épica #10
+  └── historia #11
+        ├── tarea #12  (cerrada)  ──> PR #15  ──> commit 34ccaf1 en main
+        └── tarea #13  (abierta)
+```
+
+- El PR #15 lleva `Closes #12` en el cuerpo.
+- Al mergearlo, GitHub cerró el issue #12 **solo**: el merge quedó registrado a las 20:52:09 y el
+  cierre del issue a las **20:52:10**, un segundo después. Nadie lo cerró a mano.
+- El mismo evento movió la tarjeta de #12 a *Done* en el tablero, por el workflow
+  *"Item closed → Status: Done"* del Project.
+- Desde el issue #12 se llega al PR #15, del PR al commit `34ccaf1`, y del commit al archivo
+  `.github/workflows/ci.yml`. Para el otro lado: el issue #12 muestra su *parent* #11, y #11 su
+  *parent* #10.
+
+La jerarquía usa **sub-issues** reales de GitHub, no listas de tareas en el texto. La diferencia
+importa: las sub-issues dan la relación padre-hijo navegable en las dos direcciones y el
+porcentaje de avance en el padre, mientras que una lista de casillas en el cuerpo es texto que hay
+que mantener a mano y que no sabe si el issue que menciona está abierto o cerrado.
+
+## 5. Problemas que encontré y cómo los resolví
+
+### El campo Sprint no se puede crear desde la línea de comandos
+
+Armé toda la estructura del TP3 con `gh` —etiquetas, épica, historia, tareas, bug, las relaciones
+padre-hijo y el alta en el Project— y me faltaba el campo de sprint. `gh project field-create`
+sólo acepta `--data-type {TEXT|SINGLE_SELECT|DATE|NUMBER}`: **el tipo `ITERATION` no está**, ni por
+CLI ni por la API pública de Projects. Un campo de texto llamado "Sprint" no es lo mismo: el tipo
+*Iteration* es el que tiene fechas de inicio y duración y el que permite después filtrar por
+sprint actual.
+
+Solución: ese campo lo creé desde la web, con duración de 1 semana. Lo dejo anotado porque es un
+límite real de la herramienta y no algo que hice mal.
+
+### Al probar el límite de WIP me quedó el tablero desordenado
+
+Para comprobar si el límite de 2 bloqueaba o sólo avisaba, arrastré varias tarjetas a *In
+Progress*. Comprobé lo que quería —avisa, no bloquea— pero quedaron en esa columna la épica y el
+bug, que no estaban en curso. Un tablero que no refleja la realidad es peor que no tener tablero,
+porque se lo lee y se saca una conclusión falsa.
+
+Las devolví a *Todo* con `gh project item-edit`, pasando el id del campo Status y el id de la
+opción, que se sacan de `gh project field-list --format json`.
+
+### Elegir dónde colgaba el bug
+
+Mi primer impulso fue colgar el bug de la historia #11, porque ahí estaba todo lo demás. Está mal:
+#11 es sobre el pipeline de CI y el bug es de la pantalla de Stock, entregada en el TP2. Colgarlo
+ahí habría hecho que la historia no se pudiera cerrar hasta arreglar algo que no tiene nada que
+ver con ella. Un defecto sobre algo ya entregado no es parte de un incremento nuevo: va al
+backlog, priorizado por su cuenta.
+
+## 6. Declaración de uso de IA
+
+Usé un asistente de IA para armar la estructura del TP3 —redactar los cuerpos de la épica, la
+historia, las tareas y el bug, y automatizar su creación con `gh`— igual que en los prácticos
+anteriores. Lo que decidí yo:
+
+1. **Qué historia elegir.** La de CI no es un ejemplo inventado: es lo que sigue de verdad en el
+   TP4, y por eso la tarea #12 pudo cerrarse con un PR real en lugar de simulado.
+2. **La duración del sprint y el límite de WIP**, con las razones que están arriba. Ninguno de los
+   dos números es un valor por defecto copiado.
+3. **Verifiqué la trazabilidad en vez de suponerla**: comparé el instante del merge del PR con el
+   del cierre del issue para confirmar que lo cerró la automatización y no yo.
+4. **Probé el límite de WIP rompiéndolo**, para saber si avisa o bloquea. La respuesta cambia lo
+   que significa el límite, y no quería escribirla de memoria.
+5. **Corregí el criterio de dónde va el bug** cuando me di cuenta de que colgarlo de la historia la
+   dejaba imposible de cerrar.
+
+**Qué significa esto**: puedo defender cada número y cada relación del tablero. Lo que no puedo
+decir es que redacté los textos de los issues a mano.
