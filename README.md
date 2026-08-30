@@ -431,3 +431,4 @@ npm run build
 | TP9 | DevSecOps y observabilidad | pendiente |
 
 Funcionalidad pendiente de la aplicación: transferencias entre locales, reportes y dashboard.
+
