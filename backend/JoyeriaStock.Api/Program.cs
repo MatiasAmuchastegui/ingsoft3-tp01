@@ -224,5 +224,3 @@ if (aplicarMigraciones || sembrarDatos)
 }
 
 app.Run();
-// TODO: endpoint de salud
-using NoExiste;
