@@ -478,3 +478,245 @@ anteriores. Lo que decidí yo:
 
 **Qué significa esto**: puedo defender cada número y cada relación del tablero. Lo que no puedo
 decir es que redacté los textos de los issues a mano.
+
+---
+
+# Decisiones — TP4
+
+## 1. Estructura del pipeline
+
+El workflow es `.github/workflows/ci.yml` y tiene **dos jobs**: `build-backend` y `build-frontend`.
+
+**Por qué dos y no uno.** Porque mi app tiene dos Dockerfiles, uno por cada mitad: el backend
+(ASP.NET Core 8) y el frontend (React + Vite servido por nginx). Un job por artefacto construible.
+No inventé la división para llegar a dos: es la que ya existía desde el TP2.
+
+**Por qué en paralelo.** Los dos builds son independientes —ninguno necesita nada del otro— así que
+no hay razón para que uno espere. Es el comportamiento por defecto de GitHub Actions: los jobs
+corren en paralelo salvo que se declare `needs:`. Poner `needs:` acá sólo sumaría tiempo sin comprar
+nada. Y hay un segundo efecto, más útil de lo que parece: cuando algo falla, sé **cuál de las dos
+mitades** se rompió sin leer un log mezclado. En la demostración del gate se ve exacto —
+`build-backend` en rojo y `build-frontend` en verde al mismo tiempo.
+
+Cada job corre en su **propio runner**, una máquina Ubuntu limpia que GitHub presta y destruye al
+terminar. Los dos jobs **no comparten nada**: ni filesystem, ni variables, ni la imagen que el otro
+construyó. Si mañana uno necesitara algo del otro, tendría que viajar como artefacto o declararse
+con `needs:`.
+
+**Los disparadores son dos**, y cada uno hace un trabajo distinto:
+
+| Trigger | Para qué está |
+|---|---|
+| `pull_request` con `branches: [main]` | El que hace el trabajo: verifica el resultado propuesto **antes** del merge, y es el que alimenta el gate |
+| `push` con `branches: [main]` | Deja la corrida de la que el badge lee su estado, y deja el cache en `main` para que cualquier PR nuevo lo aproveche desde su primera corrida |
+
+Los pasos de cada job son cuatro: un `echo` propio que deja escrito en el log qué rama y qué commit
+se están verificando, el checkout, la preparación del constructor, y el build. El primero usa
+`github.head_ref` y no `GITHUB_REF_NAME` a propósito: en un PR, `GITHUB_REF_NAME` vale
+`<numero>/merge` —porque GitHub construye la mezcla de mi rama con `main`— y el log quedaría
+diciendo `21/merge`, que no le sirve a nadie.
+
+## 2. Por qué el pipeline construye con mi Dockerfile
+
+Es la decisión de diseño del práctico y la que más me importa poder defender.
+
+El workflow **no tiene una sola línea de .NET ni de Node**. No sabe que el backend es C# ni que el
+frontend usa Vite. Lo único que hace es pedirle a `docker/build-push-action` que construya el
+contexto `./backend` y el contexto `./frontend`. Quien sabe cómo se compila mi app es **mi Dockerfile
+del TP2**.
+
+La alternativa sería que el workflow compilara por su cuenta: `dotnet restore`, `dotnet build`,
+`npm ci`, `npm run build`. Eso me dejaría con **dos definiciones distintas del mismo build** —la del
+workflow y la del Dockerfile— y el problema no es la duplicación en sí, es que **divergen sin avisar**.
+El día que cambie una versión de SDK o agregue una variable de compilación en un lado y no en el
+otro, el pipeline estaría verificando una compilación que **no es la que después despliego**. Un
+verde que no significa nada es peor que no tener pipeline: da confianza falsa.
+
+Con este diseño hay una sola definición de build, versionada en el repo, y es literalmente la misma
+que produce las imágenes que publiqué en ghcr.io en el TP2. Efecto lateral que confirma que la
+decisión es buena: este mismo `ci.yml` le serviría a cualquier compañero con cualquier stack, porque
+lo que cambia es el Dockerfile, no el workflow.
+
+## 3. Qué cachea el pipeline, y qué pasa si el cache desaparece
+
+**Qué se cachea: las capas de la imagen.** Docker construye por capas —cada `RUN`, `COPY` o `ADD`
+deja una— y si una capa no cambió, se puede reutilizar en vez de rehacerla. El problema es que el
+runner nace vacío en cada corrida, así que sin ayuda no hay ninguna capa que reutilizar. Eso lo
+resuelven `cache-from` y `cache-to` con `type=gha`: al empezar traen las capas del **cache de GitHub
+Actions**, y al terminar las guardan. Con `mode=max`, también las capas intermedias, no sólo las de
+la imagen final.
+
+`docker/setup-buildx-action` no es decorativo: el constructor que Docker trae de fábrica guarda las
+capas en el disco de la máquina y no las sabe exportar a ningún lado. Como esa máquina se destruye,
+guardarlas ahí no sirve. Ese paso pone otro constructor que sí sabe mandarlas al almacén de GitHub.
+Sin él el build **falla**, no queda callado: `Cache export is not supported for the docker driver`.
+
+**Qué se reutiliza y qué no.** Lo decide cómo está escrito mi Dockerfile. Los dos copian primero los
+archivos de dependencias (`*.csproj` en el backend, `package.json` y `package-lock.json` en el
+frontend) y **recién después** el código. Entonces:
+
+- Se reutilizan: la imagen base, el `COPY` de los archivos de proyecto, el `dotnet restore` y el
+  `npm ci`. Son las capas caras.
+- Se rehacen: el `COPY . .` del código y el `dotnet publish` / `vite build` que vienen después.
+
+Esa decisión la tomé en el TP2 sin saber que iba a servir para esto, y es la razón por la que el
+cache paga.
+
+**Medición real en mi repo**, las dos corridas del PR #18 sobre la misma rama:
+
+| Corrida | Duración | Capas `CACHED` |
+|---|---|---|
+| Primera (run `33339647502`) | **1m 9s** | 0 — no había nada guardado |
+| Segunda (run `33339739468`) | **20s** | **15** — 8 en el backend, 7 en el frontend |
+
+Los dos jobs reutilizaron, y eso confirma que el `scope` separado funciona (ver §5).
+
+**Qué pasa si el cache desaparece: más lento, no roto.** GitHub lo desaloja cuando quiere y tiene
+límite de tamaño, así que hay que asumir que en cualquier corrida puede no estar. En mi caso el
+pipeline volvería a tardar ~1m 9s en vez de 20s, y daría verde igual — de hecho eso es exactamente
+lo que pasó en la primera corrida, que es una corrida sin cache. El cache es una **optimización**,
+nunca una dependencia. Si el pipeline **fallara** sin cache, no tendría un cache: tendría una
+dependencia escondida, y eso es un bug que hay que arreglar, no un cache que hay que conservar.
+
+Vale aclarar una expectativa que no se cumplió al revés: la cátedra avisa que en apps chicas la
+segunda corrida puede tardar **igual o más**, porque subir el cache también cuesta. En mi caso sí se
+notó (1m9s → 20s) porque `dotnet restore` y `npm ci` son caros de verdad. Pero la evidencia que
+importa es la palabra `CACHED` en el log, no el cronómetro: el tiempo depende de qué máquina te toca.
+
+## 4. El gate: de informar a mandar
+
+Hasta acá el pipeline **informaba**. Un check en rojo se veía, pero el botón de merge seguía
+habilitado y nada impedía meter código roto a `main`. Lo que convierte el pipeline en **gate** no es
+una línea del YAML: es una casilla de configuración del repositorio.
+
+La protección de `main` quedó exigiendo **dos condiciones**, y las dos tienen que cumplirse:
+
+1. **Entrar por Pull Request** (viene del TP1, con 0 approvals — el trabajo es individual y GitHub
+   nunca deja aprobar el propio PR, así que exigir 1 me dejaría sin poder mergear nunca)
+2. **Los dos checks en verde**: `required_status_checks` con `contexts: ["build-backend",
+   "build-frontend"]`
+
+Más `enforce_admins: true`, que ya venía del TP1: la regla me aplica a mí también, que soy el dueño
+del repo. Sin eso el gate sería una sugerencia.
+
+**Los `contexts` son el id del job, no el `name:`.** El check se llama `build-backend` porque así se
+llama el job. Si mañana le agrego `name: Build Backend`, el check pasa a llamarse así y el gate
+queda esperando un check que ya no existe: bloquearía todos los PRs para siempre, sin un mensaje de
+error que lo explique. Es la trampa más silenciosa de esta configuración.
+
+**`strict: true`** exige además que la rama tenga incorporado el `main` actual antes de mergear. Sin
+eso, un PR podría estar en verde contra un `main` viejo: se verificó una combinación que ya no es la
+que va a quedar. Con dos PRs abiertos se ve en el acto — al mergear uno, el otro queda desactualizado
+y aparece el botón *Update branch*. Lo comprobé con el PR #19, que abrí justamente para eso: con un
+solo PR abierto esta condición no se puede observar.
+
+## 5. La demostración del gate actuando
+
+Es la evidencia central del práctico y quedó entera en el **PR #20**, con sus dos corridas:
+
+| Momento | Qué pasó |
+|---|---|
+| **Rojo** | Agregué `using NoExiste;` al final de `Program.cs`. Run `33340557165`: `build-backend` **falla**, `build-frontend` **pasa** |
+| **Bloqueado** | El botón de merge deshabilitado, con *Required check failing*. Un solo check en rojo alcanza para frenar el merge |
+| **Fix** | Saqué esa línea en un segundo commit sobre la misma rama |
+| **Verde** | Run `33340605637`: los dos jobs en verde, el pipeline re-corrió solo sin que yo tocara nada |
+| **Merge** | Recién ahí el botón se habilitó |
+
+El error que devolvió el build es interesante y no el que esperaba: no fue "no encuentro el
+namespace `NoExiste`" sino **`CS1529: A using clause must precede all other elements defined in the
+namespace`**, en `Program.cs(228,1)`. Es porque `Program.cs` usa top-level statements y el `using`
+quedó al final del archivo, después de código. Rompe igual —que era el objetivo— pero por una razón
+distinta a la que suponía. Vale como recordatorio de que el pipeline reporta lo que realmente pasó,
+no lo que uno planeó que pasara.
+
+Lo importante es dónde falló: en el step *Construir la imagen del backend*, dentro del `dotnet
+publish` de **mi Dockerfile**. No hay un paso de compilación en el workflow que pudiera fallar — es
+consistente con la decisión de §2.
+
+**Antes de mergear leí mi propio diff** en *Files changed*. El gate verifica que compile; que el
+cambio tenga sentido no lo puede verificar ninguna máquina, y la plataforma no me lo puede exigir
+porque no puedo aprobarme a mí mismo. Es la parte humana de la regla *"si no pasó por el pipeline,
+no existe"*.
+
+## 6. El badge
+
+La línea del badge está en el README (PR #21) y muestra el estado del último build de `main` en
+tiempo real. Son **dos direcciones anidadas**: la de adentro es la imagen (`…/badge.svg`), la de
+afuera es adónde lleva el clic (el historial de corridas del workflow). Si se escribe sólo la imagen
+el badge se ve idéntico, pero al clickearlo se abre el SVG suelto en una página en blanco — y no se
+nota mirando el README.
+
+El badge lee el estado del workflow por el **nombre del archivo** (`ci.yml`), no por el `name: CI`
+de adentro. Renombrar el archivo lo rompe; cambiar el `name:` no.
+
+Parece cosmético y es cultura: el estado del proyecto queda visible para cualquiera que entre al
+repo, sin tener que abrir la pestaña Actions.
+
+## 7. Problemas que encontré y cómo los resolví
+
+### El commit vacío, y por qué hacen falta dos corridas separadas
+
+Para ver el cache funcionando hacen falta dos corridas: la primera guarda las capas, la segunda las
+reutiliza. Y tienen que ser **una después de la otra**, no simultáneas: el cache se sube **al final**
+de la corrida, así que si se pushean dos commits seguidos las corridas se solapan y la segunda
+empieza a construir cuando la primera todavía no terminó de guardar nada. El resultado es cero
+`CACHED` y la sensación de que la configuración está mal.
+
+La segunda corrida la disparé con `git commit --allow-empty`, que crea un commit sin ningún cambio.
+Sirve justamente para eso: forzar una corrida nueva sin tocar el código.
+
+### Las dos corridas tienen que ser del mismo PR
+
+Una corrida puede recuperar capas guardadas por **su propia rama** o por la **rama base** del PR.
+Lo que guarda un PR queda atado a ese PR. Como `main` todavía no había guardado nada —era la primera
+vez que este workflow existía— la única forma de ver `CACHED` era que las dos corridas fueran del
+mismo PR. Después del merge, la corrida del `push` a `main` dejó el cache ahí, y desde entonces
+cualquier PR nuevo lo aprovecha ya en su primera corrida. Ésa es la segunda razón por la que el
+workflow también corre en `main`, además del badge.
+
+### El `scope` del cache, que no da error si falta
+
+Los dos jobs guardan sus capas en el mismo almacén. Si no se les da un `scope` distinto, usan el
+default y **se pisan**: el último en terminar sobreescribe el cache del otro. Lo desconcertante es
+que no hay ningún error — simplemente un job muestra `CACHED` y el otro no, y **cuál** cambia de una
+corrida a la otra según cuál terminó último. Parece un problema del Dockerfile y no lo es.
+
+Lo puse desde el principio (`scope=backend` y `scope=frontend`) porque el enunciado lo advierte, y
+la medición lo confirma: en la segunda corrida **los dos** jobs reutilizaron capas, 8 y 7.
+
+### El orden de configuración del gate
+
+El buscador de checks de la pantalla de protección **sólo ofrece checks que corrieron en los últimos
+7 días**. Intentar configurar el gate antes de la primera corrida no muestra `build-backend` ni
+`build-frontend`, y parece que algo está mal configurado. No lo está: hay que correr el workflow una
+vez y volver. Por eso el orden fue workflow → corrida → gate, y no al revés.
+
+### El heredoc de la guía no funciona en PowerShell
+
+El comando `gh api --method PUT ... --input - <<'EOF'` de la guía usa un heredoc de shell POSIX, que
+PowerShell no interpreta. Terminé configurando el gate **desde la web** (*Settings → Branches*), que
+además es el camino más seguro: el `PUT` **reescribe la protección entera** y todo campo omitido
+vuelve a su default, así que un JSON incompleto me habría borrado en silencio lo que configuré en el
+TP1. Antes de tocar nada leí cómo estaba (`gh api .../branches/main/protection`) para saber qué tenía
+que sobrevivir: 0 approvals y `enforce_admins`.
+
+## 8. Declaración de uso de IA
+
+Usé un asistente de IA para redactar el `ci.yml` y este documento, y para leer los logs de las
+corridas desde la terminal. Lo que hice y verifiqué yo:
+
+1. **Corrí el pipeline y leí los logs**, en vez de suponer que funcionaba. La comparación 1m9s / 20s
+   y las 15 capas `CACHED` salen de las corridas `33339647502` y `33339739468` de mi repo, no de un
+   ejemplo.
+2. **Rompí el build a propósito y verifiqué que el gate bloqueaba de verdad.** No alcanza con que la
+   configuración exista: había que ver el botón deshabilitado.
+3. **Leí el error real** en vez de asumirlo. Esperaba un "no existe el namespace" y era un `CS1529`
+   por el orden de los `using` con top-level statements. Está documentado arriba tal como pasó.
+4. **Comprobé la protección de `main` antes de tocarla**, porque el `PUT` de la API la reescribe
+   entera y podría haber perdido lo del TP1 sin enterarme.
+5. **Verifiqué que el badge lleva al historial** y no a un SVG suelto, que es el error fácil de este
+   paso porque no se nota mirando el README.
+
+**Qué significa esto**: puedo explicar qué hace cada bloque del workflow, por qué construyo con mi
+Dockerfile, qué se cachea y qué pasa si el cache no está. Lo que no puedo decir es que escribí el
+YAML a mano.
