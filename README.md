@@ -1,5 +1,8 @@
 # Joyería · Sistema de gestión de stock
 
+[![CI](https://github.com/MatiasAmuchastegui/ingsoft3-tp01/actions/workflows/ci.yml/badge.svg)](https://github.com/MatiasAmuchastegui/ingsoft3-tp01/actions/workflows/ci.yml)
+
+
 Gestión de stock para una joyería con **3 locales físicos**. El stock es siempre por local:
 no existe un stock global.
 
