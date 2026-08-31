@@ -2,7 +2,23 @@
 
 ## 1. Push directo a `main` rechazado
 ![push rechazado](img/push-rechazado.jpeg)
-Intenté pushear un commit directo a `main` desde la consola y GitHub lo rechazó. En este caso puntual el mensaje que dio fue `[rejected] main -> main (fetch first)`, porque mi rama local estaba desactualizada respecto del remoto — no llegué a confirmar con un segundo intento (después de un `git pull`) que el rechazo también se produce por la regla de protección en sí. Lo dejo aclarado en `decisiones.md`.
+Con el `main` local **al día** (`git pull` → *Already up to date*), commiteé directo sobre `main` e intenté pushear. El servidor aceptó los objetos y **después** rechazó la actualización de la referencia:
+
+```console
+remote: error: GH006: Protected branch update failed for refs/heads/main.
+remote:
+remote: - Changes must be made through a pull request.
+remote:
+remote: - 2 of 2 required status checks are expected.
+To https://github.com/MatiasAmuchastegui/ingsoft3-tp01.git
+ ! [remote rejected] main -> main (protected branch hook declined)
+```
+
+Que la rama local estuviera actualizada es lo que hace concluyente a esta evidencia: descarta el rechazo por `fetch first` y deja como única causa posible la **regla de protección**. El mensaje lo confirma en tres lugares: el código `GH006`, el motivo `Protected branch update failed`, y el `(protected branch hook declined)` del final — que es el rechazo del *hook* de protección, no un conflicto de historia.
+
+Se ve además el orden en que trabaja Git: los objetos viajan igual (`Writing objects: 100%`), y recién al intentar mover la referencia `refs/heads/main` el servidor la frena. El commit llegó a GitHub; lo que no llegó a pasar es que `main` apuntara a él.
+
+> Esta captura es posterior al TP4 y por eso muestra **las dos condiciones** que exige `main` hoy, no sólo la del TP1: *Changes must be made through a pull request* (la protección del TP1) y *2 of 2 required status checks are expected* (el gate del TP4, `build-backend` y `build-frontend`). El práctico 1 sólo exigía la primera.
 
 ## 2. El PR de la rama B no se puede mergear: conflicto
 ![aviso de conflicto](img/conflicto-aviso.jpeg)
