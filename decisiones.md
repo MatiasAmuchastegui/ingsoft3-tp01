@@ -12,7 +12,11 @@ Para que nunca hubiera aparecido, tendría que haber evitado que las dos ramas t
 
 - **El botón de mergear no se habilitaba enseguida después de resolver el conflicto.** Después de sacar los marcadores del `README.md` en el editor web y tocar "Commit merge", el botón para mergear el PR de la rama B se quedó un rato sin habilitarse. Al principio pensé que mi resolución había quedado mal, pero era que GitHub estaba recalculando el estado del PR — esperando unos segundos se habilitó solo, sin que tuviera que tocar nada más.
 
-- **La evidencia del push rechazado no aísla la causa.** Cuando probé pushear directo a `main`, el rechazo que me dio GitHub fue `[rejected] main -> main (fetch first)` — un rechazo normal por tener el `main` local desactualizado, no necesariamente el rechazo específico de la protección de rama (`protected branch hook declined`). No reintenté el push después de actualizar mi rama local, así que esta captura por sí sola no prueba de forma concluyente que la protección esté funcionando, aunque el resto de la configuración (branch protection activa, "Do not allow bypassing" activado) sí está verificada en la configuración del repositorio.
+- **Mi primera evidencia del push rechazado no probaba lo que yo creía.** Al probar el push directo a `main`, el rechazo que obtuve fue `[rejected] main -> main (fetch first)`: un rechazo por tener el `main` local desactualizado, que se produce **exista o no** la protección de rama. Es decir que mi captura mostraba un push fallido, pero no demostraba que la regla estuviera funcionando — cualquier repositorio sin proteger habría dado ese mismo mensaje. La confusión es fácil porque los dos casos se ven parecidos: el push falla y la consola se pinta de rojo.
+
+  Lo detecté releyendo mi propia evidencia y me pareció más honesto dejarlo anotado que taparlo. Después lo repetí bien: `git pull` primero, para que la rama local estuviera al día y **el único motivo posible de rechazo fuera la protección**. Ahí sí apareció el mensaje que corresponde — `GH006: Protected branch update failed`, con `(protected branch hook declined)` — y ésa es la captura que quedó en `evidencias.md`.
+
+  Lo que me llevo de esto: una evidencia no vale por mostrar el resultado esperado, vale por **descartar las otras explicaciones posibles**. Si el mismo mensaje aparecería sin la protección puesta, no prueba nada sobre la protección.
 
 ## 3. Declaración de uso de IA
 
