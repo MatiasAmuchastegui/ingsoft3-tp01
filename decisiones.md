@@ -130,6 +130,9 @@ Los tres factores que pesaron:
  Cuando tengo cuatro tarjetas abiertas, ninguna avanza: cada vez que cambio de
 una a otra pago el costo de recordar dónde estaba, y el trabajo a medio hacer no le sirve a nadie
 hasta que se termina. 
+Elegí 2 y no 1 porque con 1 me quedo bloqueado cada vez que algo depende de esperar —un run de CI,
+una revisión— y quedarme sin hacer nada por respetar el tablero sería el tablero mandando sobre el
+trabajo. Y no 3 porque un límite que nunca se toca no informa nada.
 
 ## 3. Diagnóstico de la historia mal escrita
 
@@ -217,4 +220,4 @@ línea.
 
 ## Declaración de uso de IA
 
-Para este TP solo use IA para redactar algunas partes de este decisiones.md.
+Usé IA para escribir el ci.yml y para redactar este documento. Lo que hice yo fue correr el pipeline y verificar que hiciera lo que decía: comparé las dos corridas para ver el cache reutilizado, rompí el build a propósito para comprobar que el gate bloqueara el merge, y configuré la protección de main desde la web después de leer cómo estaba, para no perder lo del TP1.
