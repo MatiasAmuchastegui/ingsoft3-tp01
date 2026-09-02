@@ -12,16 +12,33 @@ interface Props {
   onTransferido: () => void
 }
 
+/**
+ * Traslado de mercadería de un local a otro. Sólo para administradores.
+ *
+ * Antes de esto, mover una pieza de local era dar de baja en uno y de alta en el otro: dos
+ * operaciones sueltas, y si la segunda fallaba la mercadería desaparecía del sistema. Acá es
+ * **una sola operación atómica** en el backend: se crean los dos asientos juntos, compartiendo
+ * un mismo identificador de transferencia, dentro de la misma transacción. O entran los dos, o
+ * no entra ninguno.
+ *
+ * Es de admin porque toca dos locales a la vez, y un vendedor sólo tiene alcance sobre el suyo.
+ */
 export default function ModalTransferencia({ item, locales, onCerrar, onTransferido }: Props) {
   // El destino nunca puede ser el origen, así que ni siquiera se ofrece.
+  // Prevenirlo sacándolo de la lista es mejor que validarlo después: no hay forma de elegir
+  // mal, así que no hace falta un mensaje de error explicando que está mal.
   const destinosPosibles = locales.filter((l) => l.id !== item.localId)
 
   const [localDestinoId, setLocalDestinoId] = useState(destinosPosibles[0]?.id ?? 0)
   const [cantidad, setCantidad] = useState(1)
   const [observacion, setObservacion] = useState('')
   const [error, setError] = useState<string | null>(null)
+  // Bloquea el botón mientras el pedido está en vuelo: sin esto, dos clics rápidos mandan dos
+  // transferencias y se mueve el doble de lo que se quería.
   const [enviando, setEnviando] = useState(false)
 
+  // Validación de interfaz, para avisar antes de mandar. El backend valida lo mismo por su
+  // cuenta y es el que manda: acá se evita el viaje al servidor y se da un mensaje mejor.
   const excedeStock = cantidad > item.cantidad
   const formularioValido =
     cantidad >= 1 && Number.isInteger(cantidad) && !excedeStock && localDestinoId > 0
@@ -29,7 +46,7 @@ export default function ModalTransferencia({ item, locales, onCerrar, onTransfer
   const destino = locales.find((l) => l.id === localDestinoId)
 
   async function manejarSubmit(evento: FormEvent) {
-    evento.preventDefault()
+    evento.preventDefault() // sin esto el navegador recarga la página y se pierde todo
     if (!formularioValido || enviando) return
 
     setEnviando(true)
@@ -37,13 +54,17 @@ export default function ModalTransferencia({ item, locales, onCerrar, onTransfer
     try {
       await api.movimientos.transferir({
         productoId: item.productoId,
+        // El origen no se elige: es el local de la fila desde la que se abrió el modal.
         localOrigenId: item.localId,
         localDestinoId,
         cantidad,
+        // Cadena vacía y "sin observación" son cosas distintas para la base: se manda null.
         observacion: observacion.trim() || null,
       })
       onTransferido()
     } catch (e) {
+      // El mensaje viene del backend (una regla de negocio incumplida, por ejemplo stock
+      // insuficiente porque alguien vendió esa pieza mientras el modal estaba abierto).
       setError(e instanceof Error ? e.message : 'No se pudo hacer la transferencia.')
     } finally {
       setEnviando(false)
