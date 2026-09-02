@@ -8,17 +8,6 @@ import FormularioProducto from './FormularioProducto'
 
 type Pestana = 'productos' | 'categorias'
 
-/**
- * Administración del catálogo: qué productos existen y cómo se agrupan.
- *
- * El catálogo es **global**, compartido por los tres locales — un anillo es el mismo anillo en
- * todas las sucursales. Lo que cambia por local es cuántas unidades hay, y eso vive en la
- * pantalla de Stock. Separar las dos cosas es lo que permite mover mercadería entre locales sin
- * duplicar productos.
- *
- * Los vendedores ven esta pantalla en sólo lectura: necesitan consultar precios y códigos, pero
- * no decidir qué se vende.
- */
 export default function CatalogoPage() {
   const { esAdmin } = useAuth()
 
@@ -68,20 +57,10 @@ export default function CatalogoPage() {
     }
   }
 
-  /**
-   * Da de baja o reactiva un producto.
-   *
-   * Los productos **no se borran nunca**: se desactivan. Borrar uno destruiría su historial de
-   * movimientos, y con él la respuesta a "¿qué se vendió el año pasado?". Un producto inactivo
-   * desaparece de las listas y no admite movimientos nuevos, pero todo lo que pasó con él sigue
-   * ahí. Por eso la acción contraria es reactivar y no "volver a crear": es el mismo producto,
-   * con el mismo SKU y la misma historia.
-   */
   async function cambiarEstadoProducto(producto: Producto) {
     setError(null)
     try {
       if (producto.activo) {
-        // Sólo se confirma la baja. Reactivar no necesita confirmación: no se pierde nada.
         if (!window.confirm(`¿Dar de baja "${producto.nombre}"? Su historial se conserva.`)) return
         await api.productos.desactivar(producto.id)
       } else {

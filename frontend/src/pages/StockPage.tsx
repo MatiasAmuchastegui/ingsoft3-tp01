@@ -6,23 +6,11 @@ import { fechaHora, pesos } from '../formato'
 import ModalMovimiento from './ModalMovimiento'
 import ModalTransferencia from './ModalTransferencia'
 
-/**
- * Pantalla principal: las existencias por local y el historial reciente.
- *
- * Es donde se hace el trabajo diario. Muestra cuánto hay de cada producto en cada local, y
- * desde cada fila se registra un movimiento (entrada, salida o venta) o —si sos admin— se
- * traslada mercadería a otro local.
- *
- * Debajo van los últimos 15 movimientos. Están a la vista a propósito: después de registrar
- * algo, la confirmación de que quedó bien es verlo aparecer ahí, sin tener que buscarlo.
- */
 export default function StockPage() {
   const { usuario, esAdmin } = useAuth()
 
   const [locales, setLocales] = useState<Local[]>([])
   // Un vendedor arranca fijado en su local; un admin arranca viendo todos (null).
-  // Esto es sólo el valor inicial del filtro: al vendedor la API le rechaza cualquier otro
-  // local aunque manipule el pedido, así que la restricción real no está acá.
   const [localId, setLocalId] = useState<number | null>(esAdmin ? null : usuario?.localId ?? null)
   const [busqueda, setBusqueda] = useState('')
   const [soloStockBajo, setSoloStockBajo] = useState(false)
@@ -32,27 +20,13 @@ export default function StockPage() {
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Qué fila tiene abierto un modal. Guardar el item entero (y no sólo su id) le ahorra al
-  // modal tener que volver a buscarlo: ya recibe el nombre, el local y la cantidad actual.
   const [itemSeleccionado, setItemSeleccionado] = useState<StockItem | null>(null)
   const [itemATransferir, setItemATransferir] = useState<StockItem | null>(null)
 
-  // Los locales se piden una sola vez: no cambian mientras la pantalla está abierta.
   useEffect(() => {
     api.locales().then(setLocales).catch(() => setLocales([]))
   }, [])
 
-  /**
-   * Vuelve a pedir stock y movimientos con los filtros actuales.
-   *
-   * Los dos pedidos van en paralelo con `Promise.all` porque son independientes: encadenarlos
-   * duplicaría la espera sin ninguna ventaja.
-   *
-   * Después de cada operación se recarga desde el servidor en lugar de actualizar la tabla a
-   * mano con lo que se acaba de registrar. Es más pedidos, pero lo que se ve es siempre lo
-   * que la base dice, no lo que el navegador cree — y en un sistema donde dos personas pueden
-   * estar cargando al mismo tiempo, esa diferencia importa.
-   */
   const recargar = useCallback(async () => {
     setCargando(true)
     setError(null)
@@ -71,23 +45,14 @@ export default function StockPage() {
   }, [localId, busqueda, soloStockBajo])
 
   // Debounce del buscador: sin esto se dispara un request por cada tecla.
-  // El `return` cancela el temporizador anterior, así que mientras se escriba rápido no sale
-  // ningún pedido; recién sale 300 ms después de la última tecla. Cambiar de local o tildar
-  // el filtro recarga al instante (delay 0) porque ahí no hay tipeo que esperar.
   useEffect(() => {
     const temporizador = setTimeout(recargar, busqueda ? 300 : 0)
     return () => clearTimeout(temporizador)
   }, [recargar, busqueda])
 
-  // Cuántos productos están por debajo de su umbral, para el contador del filtro.
-  // "Bajo" no es un número fijo: cada producto trae el suyo, porque no es lo mismo quedarse
-  // con dos alianzas que con dos relojes de vitrina.
   const cantidadStockBajo = items.filter((i) => i.stockBajo).length
 
-  // Traducción de los tipos internos a lo que ve la usuaria. Los nombres del enum del backend
-  // (`TransferenciaSalida`) no se muestran nunca: en pantalla son flechas, que se entienden
-  // sin explicación. El `Record<TipoMovimiento, …>` obliga a que estén los cinco: si mañana se
-  // agrega un tipo al backend y se olvida acá, TypeScript no compila en vez de romper en vivo.
+  // "TransferenciaSalida" no se le muestra a nadie. Cada tipo lleva su etiqueta y su color.
   const ETIQUETAS: Record<TipoMovimiento, { texto: string; clase: string }> = {
     Entrada: { texto: 'Entrada', clase: 'entrada' },
     Salida: { texto: 'Salida', clase: 'salida' },

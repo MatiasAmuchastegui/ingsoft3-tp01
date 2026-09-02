@@ -39,15 +39,10 @@ public class Movimiento
     public Guid? TransferenciaId { get; set; }
 
     /// <summary>
-    /// Sólo en ventas: precio unitario efectivamente cobrado.
+    /// Sólo en ventas: precio unitario efectivamente cobrado, ya con el descuento mayorista
+    /// aplicado si correspondía. Se persiste para que cambiar el precio del producto no
+    /// reescriba la historia de las ventas pasadas.
     /// </summary>
-    /// <remarks>
-    /// Se guarda acá en lugar de leerlo del producto al momento de consultar, porque el precio
-    /// del producto cambia con el tiempo. Si una venta de marzo se calculara con el precio de
-    /// hoy, cada aumento reescribiría la historia y los totales del pasado dejarían de coincidir
-    /// con lo que realmente entró en la caja. Es el mismo criterio de una factura: dice lo que
-    /// se cobró ese día, no lo que costaría ahora.
-    /// </remarks>
     public decimal? PrecioUnitarioAplicado { get; set; }
 
     /// <summary>Sólo en ventas: PrecioUnitarioAplicado * Cantidad.</summary>
