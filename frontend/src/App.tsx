@@ -4,14 +4,6 @@ import CatalogoPage from './pages/CatalogoPage'
 import LoginPage from './pages/LoginPage'
 import StockPage from './pages/StockPage'
 
-/**
- * Raíz de la aplicación y guardia de acceso.
- *
- * Decide entre tres estados: todavía no sé quién sos (cargando), no hay sesión (sólo existe
- * el login) o hay sesión (existe la aplicación entera). Al no registrar siquiera las rutas
- * privadas cuando no hay usuario, no hace falta proteger cada pantalla por separado: escribir
- * `/catalogo` a mano en la barra del navegador no lleva a ningún lado.
- */
 export default function App() {
   const { usuario, cargando, logout } = useAuth()
 
@@ -21,7 +13,6 @@ export default function App() {
     return <div className="pantalla-centrada">Cargando…</div>
   }
 
-  // Sin sesión sólo existe el login, y cualquier otra ruta redirige ahí.
   if (!usuario) {
     return (
       <Routes>
