@@ -3,6 +3,7 @@ import type { FormEvent } from 'react'
 import { api } from '../api/client'
 import type { Local, StockItem } from '../api/tipos'
 import Modal from '../components/Modal'
+import { destinosPosibles, excedeStock } from '../lib/movimientos'
 
 interface Props {
   /** Fila desde la que se abrió: define el producto y el local de ORIGEN. */
@@ -27,9 +28,9 @@ export default function ModalTransferencia({ item, locales, onCerrar, onTransfer
   // El destino nunca puede ser el origen, así que ni siquiera se ofrece.
   // Prevenirlo sacándolo de la lista es mejor que validarlo después: no hay forma de elegir
   // mal, así que no hace falta un mensaje de error explicando que está mal.
-  const destinosPosibles = locales.filter((l) => l.id !== item.localId)
+  const destinos = destinosPosibles(locales, item.localId)
 
-  const [localDestinoId, setLocalDestinoId] = useState(destinosPosibles[0]?.id ?? 0)
+  const [localDestinoId, setLocalDestinoId] = useState(destinos[0]?.id ?? 0)
   const [cantidad, setCantidad] = useState(1)
   const [observacion, setObservacion] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -39,9 +40,9 @@ export default function ModalTransferencia({ item, locales, onCerrar, onTransfer
 
   // Validación de interfaz, para avisar antes de mandar. El backend valida lo mismo por su
   // cuenta y es el que manda: acá se evita el viaje al servidor y se da un mensaje mejor.
-  const excedeStock = cantidad > item.cantidad
+  const excede = excedeStock(item.cantidad, 'TransferenciaSalida', cantidad)
   const formularioValido =
-    cantidad >= 1 && Number.isInteger(cantidad) && !excedeStock && localDestinoId > 0
+    cantidad >= 1 && Number.isInteger(cantidad) && !excede && localDestinoId > 0
 
   const destino = locales.find((l) => l.id === localDestinoId)
 
@@ -71,7 +72,7 @@ export default function ModalTransferencia({ item, locales, onCerrar, onTransfer
     }
   }
 
-  if (destinosPosibles.length === 0) {
+  if (destinos.length === 0) {
     return (
       <Modal titulo="Transferir a otro local" onCerrar={onCerrar}>
         <p className="ayuda">
@@ -105,7 +106,7 @@ export default function ModalTransferencia({ item, locales, onCerrar, onTransfer
           value={localDestinoId}
           onChange={(e) => setLocalDestinoId(Number(e.target.value))}
         >
-          {destinosPosibles.map((l) => (
+          {destinos.map((l) => (
             <option key={l.id} value={l.id}>
               {l.nombre}
             </option>
@@ -123,7 +124,7 @@ export default function ModalTransferencia({ item, locales, onCerrar, onTransfer
           onChange={(e) => setCantidad(Number(e.target.value))}
         />
 
-        {excedeStock ? (
+        {excede ? (
           <p className="mensaje-error" role="alert">
             No podés trasladar {cantidad}: en {item.localNombre} hay {item.cantidad}.
           </p>

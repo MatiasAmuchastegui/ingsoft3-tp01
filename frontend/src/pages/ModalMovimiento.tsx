@@ -4,6 +4,7 @@ import { api } from '../api/client'
 import type { StockItem, TipoMovimiento } from '../api/tipos'
 import Modal from '../components/Modal'
 import { pesos } from '../formato'
+import { calcularResultante, excedeStock } from '../lib/movimientos'
 
 interface Props {
   item: StockItem
@@ -43,17 +44,17 @@ export default function ModalMovimiento({ item, onCerrar, onRegistrado }: Props)
   // Bloquea el botón mientras el pedido viaja, para que dos clics no registren dos veces.
   const [enviando, setEnviando] = useState(false)
 
-  // Entrada suma; venta y salida restan. El signo lo decide el tipo, por eso la cantidad que
-  // se manda al backend es siempre positiva.
-  const esEgreso = tipo !== 'Entrada'
   // Cómo quedaría el stock si se confirma. Se muestra antes de guardar para que quien carga
   // vea el resultado y pueda frenar si no es el que esperaba.
-  const cantidadResultante = item.cantidad + (tipo === 'Entrada' ? cantidad : -cantidad)
+  //
+  // El cálculo y la validación viven en src/lib/movimientos.ts y no acá: son reglas, y una
+  // regla metida adentro de un componente no se puede probar sin montar React.
+  const cantidadResultante = calcularResultante(item.cantidad, tipo, cantidad)
 
   // Validación en el cliente que refleja la regla 2 del backend. El backend igual la vuelve
   // a verificar: esto es comodidad para quien usa la pantalla, no la garantía.
-  const excedeStock = esEgreso && cantidad > item.cantidad
-  const formularioValido = cantidad >= 1 && Number.isInteger(cantidad) && !excedeStock
+  const excede = excedeStock(item.cantidad, tipo, cantidad)
+  const formularioValido = cantidad >= 1 && Number.isInteger(cantidad) && !excede
 
   const totalVenta = item.precioBase * cantidad
 
@@ -110,13 +111,13 @@ export default function ModalMovimiento({ item, onCerrar, onRegistrado }: Props)
           onChange={(e) => setCantidad(Number(e.target.value))}
         />
 
-        {excedeStock && (
+        {excede && (
           <p className="mensaje-error" role="alert">
             No podés retirar {cantidad} unidades: en {item.localNombre} hay {item.cantidad}.
           </p>
         )}
 
-        {!excedeStock && (
+        {!excede && (
           <p className="ayuda">
             Stock después del movimiento: <strong>{cantidadResultante}</strong>
           </p>
