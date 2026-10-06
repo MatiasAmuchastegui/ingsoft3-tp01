@@ -23,6 +23,18 @@ export default defineConfig({
       // probar unitariamente: la interfaz se verifica de punta a punta, en el TP7.
       // Acá se mide la lógica de negocio, que es lo que un unit test puede custodiar.
       include: ['src/lib/**'],
+
+      // El umbral: si la cobertura cae por debajo, vitest sale con ERROR aunque todos los
+      // tests estén en verde. Eso pone el job en rojo, y como build-frontend es un required
+      // check, el merge se bloquea.
+      //
+      // Hoy mide 100% de línea y de rama sobre src/lib. 90 deja diez puntos de aire: frena
+      // si entra lógica sin tests, sin romperse por un refactor menor.
+      //
+      // Ojo: los thresholds sólo se evalúan si la corrida pide cobertura. `vitest run` a
+      // secas, sin --coverage, pasa en verde aunque se esté por debajo — por eso el script
+      // test:ci la pide, y es ése el que corre el pipeline.
+      thresholds: { lines: 90, branches: 90 },
     },
   },
 })

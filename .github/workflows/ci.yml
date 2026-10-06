@@ -69,7 +69,7 @@ jobs:
             -sourcedirs:backend \
             -targetdir:coveragereport \
             "-reporttypes:Html;MarkdownSummaryGithub" \
-            "-classfilters:-Program*;-JoyeriaStock.Api.Domain.Entities.*;-JoyeriaStock.Api.Application.Dtos.*;-JoyeriaStock.Api.Infrastructure.Migrations.*"
+            "-classfilters:-Program*;-JoyeriaStock.Api.Domain.Entities.*;-JoyeriaStock.Api.Application.Dtos.*;-JoyeriaStock.Api.Infrastructure.Migrations.*;-JoyeriaStock.Api.Infrastructure.Configurations.*;-JoyeriaStock.Api.Infrastructure.AppDbContext;-JoyeriaStock.Api.Infrastructure.DbSeeder*"
           cat coveragereport/SummaryGithub.md >> $GITHUB_STEP_SUMMARY
 
       - name: Publicar coverage y resultados del backend
