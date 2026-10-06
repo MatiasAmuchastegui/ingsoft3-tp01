@@ -33,6 +33,54 @@ jobs:
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
 
+      # ── Tests y cobertura ────────────────────────────────────────────────
+      # Cada build tiene su propio scope de cache. Ahora el repo construye cuatro cosas
+      # distintas (las dos imágenes y las dos etapas de tests), así que son cuatro
+      # estantes: sin eso se pisan y los CACHED aparecen y desaparecen sin patrón.
+      - name: Construir la etapa de tests
+        uses: docker/build-push-action@v7
+        with:
+          context: ./backend
+          target: test        # se detiene en la etapa de tests, no llega a la imagen final
+          load: true          # la baja al Docker local; sin esto el docker run no la encuentra
+          push: false
+          tags: backend-test:ci
+          cache-from: type=gha,scope=backend-test
+          cache-to: type=gha,mode=max,scope=backend-test
+
+      # El -v es el puente: lo que el contenedor escribe en /out aparece en el disco del
+      # runner. Sin él los tests corren, salen verdes, y sus resultados se van con el
+      # contenedor — el que falla después es el paso del reporte, con un mensaje que no
+      # dice que falta esto.
+      - name: Correr los tests con coverage
+        run: |
+          docker run --rm -v "${{ github.workspace }}/TestResults:/out" backend-test:ci \
+            --collect:"XPlat Code Coverage"
+
+      # Corre en el runner y no en el contenedor: los archivos ya están afuera gracias al -v.
+      # Los class filters recortan el reporte al mismo código que se exige en el umbral:
+      # el arranque, las entidades, los DTOs y las migraciones no son lógica que testear.
+      - name: Reporte de coverage
+        if: ${{ !cancelled() }}   # también cuando los tests fallaron: es cuando se quiere mirar
+        run: |
+          dotnet tool install -g dotnet-reportgenerator-globaltool
+          reportgenerator \
+            -reports:"TestResults/*/coverage.cobertura.xml" \
+            -sourcedirs:backend \
+            -targetdir:coveragereport \
+            "-reporttypes:Html;MarkdownSummaryGithub" \
+            "-classfilters:-Program*;-JoyeriaStock.Api.Domain.Entities.*;-JoyeriaStock.Api.Application.Dtos.*;-JoyeriaStock.Api.Infrastructure.Migrations.*;-JoyeriaStock.Api.Infrastructure.Configurations.*;-JoyeriaStock.Api.Infrastructure.AppDbContext;-JoyeriaStock.Api.Infrastructure.DbSeeder*"
+          cat coveragereport/SummaryGithub.md >> $GITHUB_STEP_SUMMARY
+
+      - name: Publicar coverage y resultados del backend
+        uses: actions/upload-artifact@v6
+        if: ${{ !cancelled() }}
+        with:
+          name: coverage-backend
+          path: |
+            coveragereport
+            TestResults/tests.trx
+
   build-frontend:
     runs-on: ubuntu-latest
     steps:
@@ -55,3 +103,48 @@ jobs:
           tags: frontend:ci
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
+
+      # ── Tests y cobertura ────────────────────────────────────────────────
+      - name: Construir la etapa de tests del frontend
+        uses: docker/build-push-action@v7
+        with:
+          context: ./frontend
+          target: test
+          load: true
+          push: false
+          tags: frontend-test:ci
+          cache-from: type=gha,scope=frontend-test
+          cache-to: type=gha,mode=max,scope=frontend-test
+
+      # COVERAGE_DIR le dice al script dónde escribir, y /salida está montado sobre
+      # frontend-coverage/ del runner: por eso el reporte aparece afuera. Si se cambia una
+      # de las tres rutas hay que cambiar las tres.
+      - name: Correr los tests del frontend con coverage
+        run: |
+          docker run --rm -e COVERAGE_DIR=/salida/reporte \
+            -v "${{ github.workspace }}/frontend-coverage:/salida" frontend-test:ci
+
+      # Dos frenos, y hacen falta los dos. El `test -f` cubre que el archivo no exista.
+      # El `if (!t.lines.total)` cubre el caso silencioso: si el include no matchea nada,
+      # el archivo SÍ se escribe, con total 0 y pct "Unknown" — y con cero archivos medidos
+      # el umbral ni se evalúa. Sin este segundo freno, el job quedaría verde.
+      - name: Resumen del coverage del frontend
+        if: ${{ !cancelled() }}
+        run: |
+          F=frontend-coverage/reporte/coverage-summary.json
+          test -f "$F"
+          node -e "
+            const t = require('./$F').total;
+            if (!t.lines.total) { console.error('midio 0 archivos: revisa el include'); process.exit(1); }
+            const f = (m) => \`| \${m} | \${t[m].pct}% |\`;
+            console.log('### Coverage del frontend');
+            console.log('| métrica | % |'); console.log('|---|---|');
+            console.log(f('lines')); console.log(f('branches')); console.log(f('functions'));
+          " >> $GITHUB_STEP_SUMMARY
+
+      - name: Publicar el coverage del frontend
+        uses: actions/upload-artifact@v6
+        if: ${{ !cancelled() }}
+        with:
+          name: coverage-frontend
+          path: frontend-coverage

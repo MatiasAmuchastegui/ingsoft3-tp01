@@ -35,7 +35,22 @@ ENV VITE_API_URL=$VITE_API_URL
 RUN npm run build
 
 # ---------------------------------------------------------------------------
-# Etapa 2 — servir
+# Etapa 2 — correr los tests
+# ---------------------------------------------------------------------------
+# Parte de "build", que ya tiene Node y las dependencias instaladas. Funciona porque el
+# `npm ci` de arriba NO lleva --omit=dev: si lo llevara, vitest no estaría acá.
+#
+# Va ENTRE build y la etapa de nginx. Si estuviera al final, la imagen de producción
+# terminaría siendo el contenedor de tests en lugar de nginx — y nada se pondría rojo.
+#
+# El reporte de cobertura sale a donde diga COVERAGE_DIR, que el pipeline apunta a una
+# carpeta montada. Sin esa variable, el mismo comando escribe en coverage/ y sirve en
+# la máquina de uno: una sola receta para los dos lados.
+FROM build AS test
+ENTRYPOINT ["npm", "run", "test:ci"]
+
+# ---------------------------------------------------------------------------
+# Etapa 3 — servir
 # ---------------------------------------------------------------------------
 FROM nginx:1.27-alpine AS final
 
