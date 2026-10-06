@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { contarFaltantes, faltantesDe } from './stock'
+import { contarFaltantes, faltantesDe, urgenciaDeReposicion } from './stock'
 import type { StockItem } from '../api/tipos'
 
 /** Arma un StockItem con lo mínimo que estas reglas miran. */
@@ -64,5 +64,28 @@ describe('contarFaltantes', () => {
     [[item(1, true), item(2, false), item(3, true)], 2],
   ])('cuenta %# correctamente', (items, esperado) => {
     expect(contarFaltantes(items as StockItem[])).toBe(esperado)
+  })
+})
+
+describe('urgenciaDeReposicion', () => {
+  // Un test por cada camino que la función declara. No es "escribí muchos tests":
+  // es "cubrí lo que declaraste" — los cinco return son cinco comportamientos.
+  it.each([
+    [0, 10, 'sin-stock'],   // sin unidades: frena la venta
+    [4, 10, 'critica'],     // en la mitad del umbral o menos
+    [5, 10, 'critica'],     // el borde exacto de la mitad
+    [8, 10, 'baja'],        // por debajo del umbral
+    [10, 10, 'baja'],       // el borde exacto del umbral
+    [15, 10, 'normal'],     // hasta el doble
+    [20, 10, 'normal'],     // el borde exacto del doble
+    [50, 10, 'holgada'],    // por encima
+  ])('%i unidades con umbral %i es %s', (cantidad, umbral, esperado) => {
+    expect(urgenciaDeReposicion(cantidad, umbral)).toBe(esperado)
+  })
+
+  // Los bordes importan: sin ellos, cambiar un <= por un < no rompería nada.
+  it('un umbral de cero deja todo en holgada menos el cero', () => {
+    expect(urgenciaDeReposicion(0, 0)).toBe('sin-stock')
+    expect(urgenciaDeReposicion(1, 0)).toBe('holgada')
   })
 })
