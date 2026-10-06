@@ -32,3 +32,30 @@ export async function faltantesDe(localId: number, traer: TraerStock): Promise<S
 export function contarFaltantes(items: StockItem[]): number {
   return items.filter((item) => item.stockBajo).length
 }
+
+/**
+ * Qué tan urgente es reponer un producto en un local.
+ *
+ * El umbral de stock bajo dice si hay que reponer, pero no cuánto apura: quedarse sin
+ * unidades no es lo mismo que estar justo en el límite. Esto ordena la lista de faltantes
+ * para que lo primero que se vea sea lo que de verdad frena una venta.
+ */
+export function urgenciaDeReposicion(cantidad: number, umbral: number): string {
+  if (cantidad === 0) {
+    return 'sin-stock'
+  }
+
+  if (cantidad <= umbral / 2) {
+    return 'critica'
+  }
+
+  if (cantidad <= umbral) {
+    return 'baja'
+  }
+
+  if (cantidad <= umbral * 2) {
+    return 'normal'
+  }
+
+  return 'holgada'
+}
