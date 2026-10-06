@@ -53,8 +53,32 @@ RUN dotnet publish JoyeriaStock.Api/JoyeriaStock.Api.csproj \
 # ENTRYPOINT y no RUN: con RUN los tests correrían al CONSTRUIR la imagen, y sacar de ahí el
 # reporte de cobertura pide otro mecanismo. Con ENTRYPOINT corren en el `docker run` del
 # pipeline, y los resultados salen por un volumen montado en /out.
+#
+# Los cuatro /p: son el UMBRAL, y hacen falta los cuatro:
+#
+#   CollectCoverage   activa la medición de coverlet.msbuild. Sin esto el umbral se IGNORA
+#                     en silencio: el job queda verde y no exige nada.
+#   Threshold         el número elegido. Mide 18,2% de línea y 21,7% de rama hoy; 16 frena
+#                     si baja sin ser inalcanzable.
+#   ThresholdType     sobre qué métricas. Sin esto exige línea, rama Y MÉTODO a la vez, y se
+#                     falla por método sin entender por qué. La coma va como %2c porque
+#                     MSBuild parte los valores por coma — con una coma de verdad muere con
+#                     MSB1006 antes de correr un solo test.
+#   Exclude           QUÉ entra en la cuenta. Sin esto se mide el ensamblado entero —arranque,
+#                     migraciones, entidades— y el umbral falla siempre por una razón que no
+#                     tiene nada que ver con los tests.
+#
+# Esta lista tiene que decir LO MISMO que los -classfilters del ci.yml. Si no coincidieran,
+# el resumen de la corrida diría un número y el umbral exigiría otro.
+#
+# El --collect de más abajo convive con esto y hace otra cosa: produce el archivo que lee el
+# reporte. Estos /p: son los que FRENAN.
 FROM build AS test
 ENTRYPOINT ["dotnet", "test", "JoyeriaStock.sln", \
+            "/p:CollectCoverage=true", \
+            "/p:Threshold=16", \
+            "/p:ThresholdType=line%2cbranch", \
+            "/p:Exclude=[JoyeriaStock.Api]Program*%2c[JoyeriaStock.Api]JoyeriaStock.Api.Domain.Entities.*%2c[JoyeriaStock.Api]JoyeriaStock.Api.Application.Dtos.*%2c[JoyeriaStock.Api]JoyeriaStock.Api.Infrastructure.Migrations.*%2c[JoyeriaStock.Api]JoyeriaStock.Api.Infrastructure.Configurations.*%2c[JoyeriaStock.Api]JoyeriaStock.Api.Infrastructure.AppDbContext%2c[JoyeriaStock.Api]JoyeriaStock.Api.Infrastructure.DbSeeder*", \
             "--logger", "trx;LogFileName=tests.trx", \
             "--results-directory", "/out"]
 
