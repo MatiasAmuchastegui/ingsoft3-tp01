@@ -3,6 +3,7 @@ import { api } from '../api/client'
 import type { Local, Movimiento, StockItem, TipoMovimiento } from '../api/tipos'
 import { useAuth } from '../auth/AuthContext'
 import { fechaHora, pesos } from '../formato'
+import { contarFaltantes } from '../lib/stock'
 import ModalMovimiento from './ModalMovimiento'
 import ModalTransferencia from './ModalTransferencia'
 
@@ -82,7 +83,7 @@ export default function StockPage() {
   // Cuántos productos están por debajo de su umbral, para el contador del filtro.
   // "Bajo" no es un número fijo: cada producto trae el suyo, porque no es lo mismo quedarse
   // con dos alianzas que con dos relojes de vitrina.
-  const cantidadStockBajo = items.filter((i) => i.stockBajo).length
+  const cantidadStockBajo = contarFaltantes(items)
 
   // Traducción de los tipos internos a lo que ve la usuaria. Los nombres del enum del backend
   // (`TransferenciaSalida`) no se muestran nunca: en pantalla son flechas, que se entienden

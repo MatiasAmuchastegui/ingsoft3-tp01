@@ -17,6 +17,12 @@ Thumbs.db
 
 # ---- .NET (TP2: la app del semestre) ----
 **/TestResults/
+
+# Reportes de cobertura: se generan en cada corrida y viajan como artefacto del
+# pipeline, no en el repositorio.
+**/coverage/
+**/coveragereport/
+**/frontend-coverage/
 .vs/
 *.user
 *.suo
