@@ -17,11 +17,18 @@ WORKDIR /src
 # esta capa y no vuelve a bajar los paquetes NuGet: es la diferencia entre un rebuild
 # de 4 segundos y uno de 40. Si copiáramos todo el código antes del restore, cualquier
 # cambio en un .cs invalidaría la caché de los paquetes.
+#
+# También entra el .csproj del proyecto de tests: la etapa de tests parte de ÉSTA, así que
+# si el proyecto no está acá adentro, `dotnet test` no lo encuentra — y lo peor es que no
+# falla: una solución sin proyecto de tests devuelve 0 y no dice nada. El verde mentiría.
 COPY JoyeriaStock.Api/JoyeriaStock.Api.csproj JoyeriaStock.Api/
-RUN dotnet restore JoyeriaStock.Api/JoyeriaStock.Api.csproj
+COPY JoyeriaStock.Tests/JoyeriaStock.Tests.csproj JoyeriaStock.Tests/
+COPY JoyeriaStock.sln .
+RUN dotnet restore JoyeriaStock.sln
 
 # Ahora sí el código fuente.
 COPY JoyeriaStock.Api/ JoyeriaStock.Api/
+COPY JoyeriaStock.Tests/ JoyeriaStock.Tests/
 
 RUN dotnet publish JoyeriaStock.Api/JoyeriaStock.Api.csproj \
     --configuration Release \
@@ -29,7 +36,30 @@ RUN dotnet publish JoyeriaStock.Api/JoyeriaStock.Api.csproj \
     --no-restore
 
 # ---------------------------------------------------------------------------
-# Etapa 2 — ejecutar
+# Etapa 2 — correr los tests
+# ---------------------------------------------------------------------------
+# Parte de "build" y no de una imagen nueva: los tests necesitan el SDK y el código fuente,
+# que es exactamente lo que esa etapa ya tiene. Partir de ella no cuesta nada —Docker
+# reutiliza esas capas— y garantiza que se testea el mismo código y las mismas dependencias
+# que se compilaron.
+#
+# Va ENTRE build y final a propósito. Si estuviera al final del archivo, la última etapa
+# pasaría a ser ésta y la imagen de producción terminaría siendo el contenedor de tests,
+# sin que nada se ponga rojo.
+#
+# No lleva WORKDIR: hereda el /src de "build", que es donde está el código. Un WORKDIR fijo
+# apuntaría a una carpeta vacía y dotnet test no encontraría la solución.
+#
+# ENTRYPOINT y no RUN: con RUN los tests correrían al CONSTRUIR la imagen, y sacar de ahí el
+# reporte de cobertura pide otro mecanismo. Con ENTRYPOINT corren en el `docker run` del
+# pipeline, y los resultados salen por un volumen montado en /out.
+FROM build AS test
+ENTRYPOINT ["dotnet", "test", "JoyeriaStock.sln", \
+            "--logger", "trx;LogFileName=tests.trx", \
+            "--results-directory", "/out"]
+
+# ---------------------------------------------------------------------------
+# Etapa 3 — ejecutar
 # ---------------------------------------------------------------------------
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
 
