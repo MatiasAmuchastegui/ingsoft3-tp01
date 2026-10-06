@@ -221,3 +221,241 @@ línea.
 ## Declaración de uso de IA
 
 Usé IA para escribir el ci.yml y para redactar este documento. Lo que hice yo fue correr el pipeline y verificar que hiciera lo que decía: comparé las dos corridas para ver el cache reutilizado, rompí el build a propósito para comprobar que el gate bloqueara el merge, y configuré la protección de main desde la web después de leer cómo estaba, para no perder lo del TP1.
+
+---
+
+# Decisiones — TP5
+
+## Qué lógica elegí testear y por qué ésa
+
+Pregunté dónde duele un bug en mi app, y la respuesta son cuatro lugares. Esos son los que
+testeé:
+
+| Regla | Qué pasa si se rompe |
+|---|---|
+| `GeneradorSku.NormalizarCodigo` | El SKU va impreso en la etiqueta de una pieza física. Un código mal formado no se arregla con un deploy: hay que reimprimir |
+| `AuthService.ValidarCoherenciaRolLocal` | Un vendedor sin local no puede ver ni registrar nada, y un admin con local parece limitado cuando opera los tres |
+| `AlcanceLocales` | Una vendedora viendo o moviendo el stock de otro local. Es el agujero de permisos de la app |
+| `GeneradorTokenJwt` | Un token sin el claim de local deja a un vendedor sin alcance, o peor, con el de todos |
+
+Son 53 tests sobre 22 métodos, con las tres técnicas: `[Theory]` parametrizado, casos de error
+con sus bordes exactos, y un mock sobre `IUsuarioActual`.
+
+Lo que **no** testeé son los services asincrónicos —`MovimientoService`, `ProductoService`,
+`CategoriaService`, `StockService`—, y es una decisión y no un olvido: consultan la base, así que
+probarlos es integración y no unitario. El enunciado define unit test como el que corre «sin tocar
+red, disco ni base de datos», y por la pirámide ese nivel llega después.
+
+En el frontend la lógica estaba **adentro de los componentes**: el cálculo del stock resultante en
+`ModalMovimiento`, el filtro de destinos en `ModalTransferencia`, el contador de faltantes en
+`StockPage`. La saqué a `src/lib/` para poder probarla sin montar React — está contado más abajo.
+
+## El umbral, y por qué ese número
+
+| | Umbral | Mide hoy |
+|---|---|---|
+| Backend | **16**, línea y rama | **18,18%** línea · **20,98%** rama |
+| Frontend | **90**, línea y rama | **100%** línea · **100%** rama |
+
+El del backend es bajo y tiene una razón que puedo defender: **mis unit tests cubren el 100% de la
+lógica que un unit test puede cubrir**. El 18% sale de que el resto de mi lógica vive en services
+contra Entity Framework, que es otro nivel de la pirámide. Puse 16 para que me frene si bajo, no
+para que sea inalcanzable — y para subirlo de verdad tendría que escribir tests de integración, no
+más unit tests.
+
+Elegí el número **después** de medir, no antes. Medí primero con todo el ensamblado (3,1%), después
+con los filtros, y recién ahí puse el umbral.
+
+El del frontend es alto porque mide poco: `src/lib` son 25 líneas de funciones puras y las cubrí
+todas. 90 deja diez puntos de aire para que un refactor menor no rompa el build, pero frena cuando
+entra lógica sin tests — que es exactamente lo que pasó en la demostración.
+
+Los dos umbrales miran **línea y rama**. Con sólo líneas el freno es más débil: una condición
+ejecutada por un solo camino da 100% de línea y 50% de rama.
+
+## Qué dejé afuera de la cuenta, y por qué
+
+**Backend** — `/p:Exclude` en el `ENTRYPOINT` de la etapa de tests:
+
+| Qué | Por qué |
+|---|---|
+| `Program*` | Es el arranque. Si está mal, la app no levanta y me entero sin ningún test |
+| `Domain.Entities.*` · `Application.Dtos.*` | Clases de datos: sólo propiedades, ninguna regla. Testearlas es testear que una propiedad guarda un valor |
+| `Infrastructure.Migrations.*` | Las escribió Entity Framework, no yo. Testearlas es testear al generador |
+| `Infrastructure.Configurations.*` · `AppDbContext` · `DbSeeder*` | Configuración declarativa de EF y carga inicial de datos. No tienen comportamiento |
+
+**Los controllers quedan adentro a propósito.** Sacarlos subiría el número de 18,2% a 19,3%, y no
+lo hice: son código mío y un punto de cobertura no vale que la medición diga menos. Excluir el
+arranque y lo generado es medir lo que importa; excluir código propio porque no lo testeé es otra
+cosa.
+
+**Frontend** — al revés, con `include: ['src/lib/**']` digo qué **sí** entra: la lógica de negocio.
+Los componentes, el ruteo y el cliente HTTP quedan afuera porque un unit test no puede custodiar una
+pantalla — eso se verifica de punta a punta, y llega en el TP7.
+
+Las dos listas del backend —la del umbral y la de los `-classfilters` del reporte— dicen lo mismo a
+propósito. Si no coincidieran, el resumen de la corrida mostraría un número y el umbral exigiría
+otro, y eso se lee como trampa.
+
+## Por qué una cobertura alta no garantiza calidad
+
+Porque la cobertura mide **ejecución**, no **verificación**. Este test deja
+`GeneradorSku.NormalizarCodigo` ejecutada y no comprueba absolutamente nada:
+
+```csharp
+[Fact]
+public void CoberturaSinVerdad()
+{
+    GeneradorSku.NormalizarCodigo("ct", "Código", 10);   // se ejecutó… y no hay ningún Assert
+}
+```
+
+Suma cobertura igual que un test de verdad. Por eso la cobertura baja sí es señal confiable —hay
+código que nadie ejercita— pero la alta no lo es.
+
+Lo comprobé en mi propio código con un **mutante**: cambié `limpio.Length > maximo` por `>=` y corrí
+la suite. Un solo test se puso rojo, `NormalizarCodigo_ExactamenteElMaximo_EsAceptado`. El del caso
+de error —el que usa un código más largo que el máximo— **siguió pasando**, porque con `>` y con
+`>=` lo rechaza igual.
+
+O sea: sin el test del borde exacto tenía 100% de cobertura sobre una regla que nadie estaba
+verificando. Es la mejor demostración de que el porcentaje puede mentir, y de por qué los casos de
+borde importan más que la cantidad de tests.
+
+## El Pull Request bloqueado
+
+La secuencia completa está en el **PR #32**:
+<https://github.com/MatiasAmuchastegui/ingsoft3-tp01/pull/32>
+
+Agregué `urgenciaDeReposicion` a `src/lib/stock.ts`, una función con cinco caminos y sin un solo
+test. El resultado:
+
+```
+Tests  22 passed (22)
+
+File         | % Stmts | % Branch | % Funcs | % Lines
+All files    |      65 |      100 |   83.33 |      65
+ stock.ts    |   36.36 |      100 |   66.66 |   36.36
+
+ERROR: Coverage for lines (65%) does not meet global threshold (90%)
+```
+
+**Qué check se puso en rojo**: `build-frontend`. `build-backend` quedó en verde — alcanza con uno
+para bloquear el merge.
+
+**En qué métrica**: líneas, de 100% a 65%. Las ramas se quedaron en 100%, y tiene explicación: en
+vitest 2.x, una función que ningún test llama **no suma ramas**, sólo líneas sin cubrir. Por eso el
+umbral va sobre las dos: con uno solo de ramas, esta demostración no se habría puesto roja.
+
+**Por qué**: el código compilaba perfecto y los 22 tests pasaban. Lo que lo frenó fue un número de
+calidad que elegí yo. Es la primera vez en la materia que lo que bloquea un merge no es que algo
+esté roto.
+
+**Qué escribí para arreglarlo**: un test por cada camino que la función declara —sin stock, crítica,
+baja, normal, holgada— más los bordes exactos de cada franja: la mitad del umbral, el umbral y el
+doble. Son los que distinguen un `<=` de un `<`. La cobertura volvió a 100% y el check pasó a verde.
+
+Corridas: [la roja](https://github.com/MatiasAmuchastegui/ingsoft3-tp01/actions/runs/37528845178) ·
+[la verde](https://github.com/MatiasAmuchastegui/ingsoft3-tp01/actions/runs/37529263673)
+
+Y el **PR #33** queda abierto y en rojo a propósito, con el botón de merge deshabilitado:
+<https://github.com/MatiasAmuchastegui/ingsoft3-tp01/pull/33>
+
+## El refactor que hizo falta para poder testear
+
+En el frontend no había nada que probar unitariamente: la lógica estaba mezclada con el JSX.
+
+```tsx
+// ANTES, adentro de ModalMovimiento.tsx:
+const cantidadResultante = item.cantidad + (tipo === 'Entrada' ? cantidad : -cantidad)
+const excedeStock = esEgreso && cantidad > item.cantidad
+
+// ANTES, adentro de ModalTransferencia.tsx:
+const destinosPosibles = locales.filter((l) => l.id !== item.localId)
+```
+
+Para probar eso había que montar React, que es mucha maquinaria para verificar una resta. Lo saqué a
+`src/lib/movimientos.ts` y `src/lib/stock.ts`, y los componentes ahora las llaman. **El segundo paso
+no te lo reclaman los tests**: si extraés las funciones y no actualizás los componentes, la suite
+queda verde sobre código que la app no ejecuta.
+
+Para el mock hice algo más: `faltantesDe` recibe el cliente HTTP **por parámetro** en lugar de
+llamar a `api.stock.listar` adentro. Así el test le pasa un `vi.fn()` y no hace falta una API
+levantada. Es la misma lección que ya tenía resuelta en el backend sin saberlo —`IUsuarioActual` es
+una interfaz desde el TP1, y el comentario de esa interfaz dice textual que está así «para que la
+regla se testee con un doble de prueba, sin levantar un servidor HTTP ni fabricar tokens JWT»—.
+
+## El camino sin cubrir
+
+Elegí la línea 85 de `GeneradorSku.cs`, dentro de `GenerarAsync`:
+
+```csharp
+// Tolera series viejas con otra cantidad de dígitos (REL-001 y REL-0001 conviven).
+if (int.TryParse(parteNumerica, NumberStyles.None, CultureInfo.InvariantCulture, out var numero)
+    && numero > ultimo)
+```
+
+El reporte la marca en **`0% (0/4)`**: abre dos decisiones y ningún test recorre ninguna.
+
+**Qué entrada la recorrería**: un producto cuyo SKU tenga una parte numérica que no sea un número —
+`RELCT-ABCD`, o un código viejo cargado a mano antes de que el sistema los generara. `TryParse`
+devuelve `false` y ese SKU se saltea en lugar de romper el cálculo del correlativo.
+
+**Qué decidí**: no agregarlo. `GenerarAsync` consulta la base para traer los SKU existentes, así que
+probarlo exige un DbContext y pasa a ser integración. Y es irónico: esa rama existe justamente para
+tolerar datos viejos, que es el tipo de cosa que un test con base de datos verificaría bien y uno
+con un doble no. Queda anotado como deuda para cuando la materia llegue a ese nivel.
+
+## Problemas encontrados y cómo los resolví
+
+**El primer `dotnet test` fue una pared de `CS0246`.** El proyecto tiene `ImplicitUsings` activado,
+pero eso no incluye xUnit: faltaba `using Xunit;` en cada archivo. El error no dice «falta un using»,
+dice que no encuentra `Fact` ni `InlineData`, que es lo mismo pero no se lee igual.
+
+**`npm i -D vitest` falló con `ERESOLVE`.** La versión 5 de vitest pide vite 6 o más y el proyecto
+usa vite 5.4. La salida no es `--force` —eso instala una resolución rota a propósito— sino fijar la
+línea compatible: `vitest@^2`. Las dos quedaron en 2.1.9.
+
+**El pipeline habría quedado verde mintiendo.** Mi etapa `build` del Dockerfile copiaba sólo el
+proyecto de la API, así que al agregar `FROM build AS test` el proyecto de tests no estaba adentro de
+la imagen. Lo peor es que **no falla**: `dotnet test` sobre una solución sin proyecto de tests
+devuelve 0 y no dice nada. Lo encontré construyendo la etapa a mano antes de subirla. Se arregla
+copiando también el `.csproj` de tests y el `.sln` antes del `restore`.
+
+**El frontend falló en mi máquina y no en el pipeline.** Al correr la etapa de tests en Docker me dio
+`No test files found` y un `filter: Files/Git/salida/reporte` que no tenía sentido. Era Git Bash en
+Windows convirtiendo `/salida/reporte` a una ruta de Windows: el espacio de «Program Files» partió
+el argumento en dos y vitest tomó la segunda mitad como un filtro de nombres de test. En el runner de
+Linux no pasa, y de hecho el pipeline salió verde a la primera. Para probarlo local hay que prefijar
+`MSYS_NO_PATHCONV=1`. El síntoma —no hay tests— apunta al lugar equivocado.
+
+**Un PR quedó en conflicto y sin checks.** Armé la rama del umbral encima de la del pipeline antes de
+mergear la primera; al mergearla con *squash*, sus commits dejaron de ser ancestros de `main` y
+GitHub no corre checks sobre un PR en conflicto. Se resuelve rehaciendo la rama desde el `main`
+actual con `cherry-pick`. La lección es ramificar desde `main` después de cada merge, no encadenar
+ramas.
+
+## Declaración de uso de IA
+
+Usé IA (Claude) para escribir los tests, las etapas de tests de los Dockerfiles, los pasos del
+`ci.yml` y para redactar este documento. Lo que decidí y verifiqué yo:
+
+1. **El umbral.** Medí primero —3,1% con todo, 14,3% con los filtros básicos, 18,18% con los
+   definitivos— y recién después elegí el número. No copié el 70 del ejemplo de la cátedra, que
+   corresponde a una app cuya lógica es un validador de títulos y no un sistema de stock con services
+   asincrónicos.
+2. **Qué queda afuera de la cuenta**, incluida la decisión de **no** excluir los controllers aunque
+   habría subido el número.
+3. **Comprobé que el umbral frena, no sólo que mide.** Forcé el del backend a 30 y el contenedor
+   salió con error 1 con los 53 tests en verde; agregué un archivo sin tests al frontend y cayó a
+   80,64% con los 22 en verde. Un umbral que no se probó rompiendo es un umbral que no se sabe si
+   existe.
+4. **Corrí un mutante sobre mi propio código** —cambiar `>` por `>=`— para ver qué test lo mataba.
+   Descubrí que el caso de error no lo detectaba y que hacía falta el del borde exacto.
+5. **Construí y corrí las dos etapas de tests a mano** antes de subirlas al pipeline. Ahí aparecieron
+   los dos problemas del Dockerfile y del path de Windows.
+6. **Leí cada test para saber qué protege y qué no.** El ejercicio del camino sin cubrir sale de
+   abrir el reporte y mirar el código, no el número.
+
+Puedo explicar qué verifica cada assert de mi suite y qué casos quedaron afuera. Lo que no puedo
+decir es que escribí los tests a mano.
