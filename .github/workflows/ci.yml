@@ -34,6 +34,18 @@ jobs:
 
       - name: Preparar el constructor que sabe cachear
         uses: docker/setup-buildx-action@v4
+        with:
+          # Docker Hub limita las descargas anónimas por IP, y los runners de GitHub
+          # comparten IP entre miles de proyectos: cada tanto la cuota ya está agotada
+          # cuando llega nuestra corrida y el build muere con 429 antes de empezar.
+          #
+          # Esto redirige las descargas de Docker Hub a un espejo público. Va acá y no en
+          # los Dockerfiles a propósito: el problema es de este entorno, no de la
+          # definición de la imagen, que tiene que seguir funcionando igual en cualquier
+          # máquina. El contenido es el mismo — un espejo sirve las mismas capas.
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
 
       # ── Tests y cobertura ────────────────────────────────────────────────
       # Cada build tiene su propio scope de cache. Ahora el repo construye cuatro cosas
@@ -139,6 +151,18 @@ jobs:
 
       - name: Preparar el constructor que sabe cachear
         uses: docker/setup-buildx-action@v4
+        with:
+          # Docker Hub limita las descargas anónimas por IP, y los runners de GitHub
+          # comparten IP entre miles de proyectos: cada tanto la cuota ya está agotada
+          # cuando llega nuestra corrida y el build muere con 429 antes de empezar.
+          #
+          # Esto redirige las descargas de Docker Hub a un espejo público. Va acá y no en
+          # los Dockerfiles a propósito: el problema es de este entorno, no de la
+          # definición de la imagen, que tiene que seguir funcionando igual en cualquier
+          # máquina. El contenido es el mismo — un espejo sirve las mismas capas.
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
 
       # ── Tests y cobertura ────────────────────────────────────────────────
       - name: Construir la etapa de tests del frontend
