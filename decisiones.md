@@ -494,3 +494,230 @@ Usé IA (Claude) para escribir los tests, las etapas de tests de los Dockerfiles
 
 Puedo explicar qué verifica cada assert de mi suite y qué casos quedaron afuera. Lo que no puedo
 decir es que escribí los tests a mano.
+
+# Decisiones — TP6
+
+## Enlaces de este TP
+
+| | |
+|---|---|
+| Imagen del backend | `ghcr.io/matiasamuchastegui/ingsoft3-tp01-backend` |
+| Imagen del frontend | `ghcr.io/matiasamuchastegui/ingsoft3-tp01-frontend` |
+| QA, en vivo | https://joyeria-front-qa.onrender.com |
+| Producción, en vivo | https://joyeria-front-prod.onrender.com |
+| La cadena entera, corriendo | https://github.com/MatiasAmuchastegui/ingsoft3-tp01/actions/runs/37993396090 |
+| Historial de despliegues | https://github.com/MatiasAmuchastegui/ingsoft3-tp01/deployments |
+
+Las dos imágenes son públicas: se bajan sin credenciales, lo verifiqué con `docker logout` y
+`docker manifest inspect`.
+
+## Qué cambió respecto del TP5
+
+Hasta el TP5 el pipeline verificaba y ahí se terminaba. Ahora sigue:
+
+```
+Pull Request  →  merge a main  →  QA automático  →  aprobación  →  producción
+```
+
+Ningún paso se saltea, y no porque yo lo pida sino porque cada job depende del anterior con
+`needs:`. Si los tests fallan no hay imagen; sin imagen no hay QA; sin QA verde no hay producción.
+Lo mismo que aprendí en el TP5 con los pasos de un job —el orden es la condición— vale acá entre
+jobs.
+
+## El artefacto: una imagen etiquetada con el commit
+
+Cada push a `main` publica las dos imágenes al registry con la etiqueta `sha-<commit>`. No uso
+`latest`: `latest` es un nombre que apunta a cosas distintas según el día, y entonces la pregunta
+«qué está corriendo en producción» no tiene respuesta. Con el commit en la etiqueta, la respuesta
+es un `git show` de distancia.
+
+Las imágenes se publican **al final** de cada job de build, después de los tests. No hay ningún `if`
+que diga «si los tests pasaron» porque no hace falta: los steps se cortan al primer error, así que
+si los tests salieron rojos el job murió antes. Y el `push:` lleva dos condiciones —evento `push` **y**
+rama `main`— en vez de una, para que el día que se agregue otra rama al disparador no se publique
+algo que nunca pasó por un Pull Request.
+
+Lo comprobé al revés, que es como se comprueba: en un PR el paso «Entrar al registry» figura como
+**skipped** con todo lo demás en verde.
+
+## La misma imagen en los dos entornos
+
+Este fue el cambio de código más grande del TP, y es el que hace posible todo lo demás.
+
+Hasta el TP5 la dirección del backend estaba escrita adentro del `nginx.conf` del frontend:
+`http://backend:8080`, el nombre del servicio en el compose. Mientras el único destino fuera Docker
+Compose alcanzaba. En la nube ese nombre no existe, y además es **distinto en QA y en producción**.
+Con la dirección horneada en la imagen hacen falta dos imágenes, y entonces «se despliega lo mismo
+que se probó» es imposible de sostener.
+
+La solución fue convertir el archivo en una plantilla —`default.conf.template`, en
+`/etc/nginx/templates/`— con `${BACKEND_URL}` y `${DNS_RESOLVER}`. El entrypoint de la imagen oficial
+de nginx reemplaza esas variables al arrancar. Resultado: **los dos frontends corren la misma imagen
+y lo único que los diferencia es una variable de entorno.**
+
+Tres cosas que aprendí haciéndolo:
+
+- Si el archivo va a `conf.d/` en vez de `templates/`, nginx lo lee tal cual, con los `${...}` sin
+  reemplazar, y no levanta.
+- Cuando `proxy_pass` recibe una **variable**, nginx necesita un `resolver` declarado, porque resuelve
+  el nombre mientras corre y no al arrancar. Sin esa línea no arranca. La contracara buena es que
+  arranca aunque el backend esté caído.
+- Con una variable, nginx **no** recorta la parte de la URI que coincidió con el `location`: pasa la
+  ruta completa. Por eso hubo que sacar el `/api/` del final que llevaba la versión vieja.
+
+También acoté con `NGINX_ENVSUBST_FILTER` qué variables se reemplazan. Sin eso sustituye todas las
+del entorno, y si alguna se llamara como una de nginx —`$host`, `$uri`— la configuración saldría
+rota de una forma muy difícil de leer.
+
+## Quién dispara el deploy
+
+**El auto-deploy de Render está apagado en los cuatro servicios.** Render sabe desplegarse solo en
+cada push, y es lo que viene activado por defecto. Lo apagué a propósito: con el auto-deploy puesto,
+el despliegue no pasa por el pipeline —no espera al CI en verde ni a ninguna aprobación— y toda la
+cadena de arriba deja de significar algo.
+
+El deploy lo dispara el workflow, con un POST al *deploy hook* de cada servicio. Y los hooks llevan
+**`&ref=$GITHUB_SHA`**, que no es un detalle: sin eso Render despliega la punta de `main`, que para
+cuando el hook llega puede tener commits que este pipeline nunca verificó.
+
+### Limitación conocida
+
+Render construye la imagen **desde el repositorio**, no se baja la que el pipeline publicó en el
+registry. O sea que lo que corre en QA y en producción no son los mismos bytes que se verificaron,
+sino una reconstrucción del **mismo commit**, fijado con `&ref`. Mismo código y mismo Dockerfile, pero
+no el mismo artefacto.
+
+Lo dejo anotado porque es la diferencia entre «promover el artefacto» y «reconstruir el commit», y la
+segunda es más débil. Render permite crear un servicio que despliegue una imagen de un registry en
+lugar de un repo; cerrarlo así implica rehacer los cuatro servicios.
+
+## Los dos entornos están separados de verdad
+
+Cuatro servicios en Render —api y front por entorno— y **dos bases distintas en Neon**, `app_qa` y
+`app_prod`. También cambia la `Jwt__Key`.
+
+Eso último no es decoración. En QA la contraseña de la administradora es la del seed, `Admin123!`,
+y es pública: está en el código. Si la clave de firma fuera la misma en los dos entornos, cualquiera
+podría pedir un token en QA y entrar a producción con él.
+
+Lo verifiqué en vez de suponerlo. Pedí un token por el front de QA y lo presenté en los dos lados:
+
+```
+token emitido en QA  →  contra QA     HTTP 200
+token emitido en QA  →  contra PROD   HTTP 401
+```
+
+## La aprobación, y por qué esto es entrega continua y no despliegue continuo
+
+`deploy-qa` corre solo. `deploy-prod` declara `environment: production`, que en el repo tiene un
+revisor obligatorio, y se queda esperando.
+
+Ahí está la diferencia de los dos términos. El pipeline **deja todo listo** para desplegar en
+producción con cada cambio verificado: eso es entrega continua. Apretar el botón es una decisión de
+negocio, no técnica. Sacando el revisor, esto mismo pasa a ser despliegue continuo **sin tocar una
+línea del workflow** — la diferencia no está en el código, está en una casilla.
+
+El dato que mejor lo muestra: en la corrida que rechacé, el job `deploy-prod` ejecutó **cero steps**.
+No corrió y lo cancelaron a mitad: nunca arrancó. La aprobación no es un paso adentro del job, es
+una puerta antes del job.
+
+### El rechazo
+
+Rechacé la primera corrida con este motivo:
+
+> Es la primera corrida del pipeline de despliegue y QA recién terminó de levantar. Quiero verificar
+> a mano el login y el listado de stock en QA antes de tocar producción.
+
+Producción no se tocó. El entregable de ese ejercicio es que **no pasó nada**, y que quedó registrado
+quién lo decidió y por qué.
+
+## La prueba de humo
+
+Un deploy puede terminar «exitoso» y dejar la app sin base, sin configuración o sirviendo una página
+en blanco. Los tests del CI ya corrieron sobre el código y probaron la lógica; el humo prueba otra
+cosa: que lo que quedó arriba, arriba y conectado, responde.
+
+Son cuatro comprobaciones en orden, y el orden importa porque aísla el problema:
+
+| | Qué descarta si pasa |
+|---|---|
+| `GET /` en el front | nginx levantó y el bundle está |
+| `GET /nginx-health` | nginx responde por sí mismo, sin el backend |
+| `GET /health` en la api | el backend vive **y** ve la base — el healthcheck incluye `AddDbContextCheck` |
+| `POST /api/auth/login` por el front | el camino real: nginx → proxy → backend → base |
+
+El último es el que vale, y es el único endpoint que toca datos sin pedir un token antes, así que es
+el único que se puede probar desde afuera.
+
+**Es el mismo script para los dos entornos**, con otras URLs. Que sea el mismo archivo no es ahorro de
+tipeo: es la garantía de que producción se valida con el mismo criterio con el que se validó QA.
+
+### Limitación conocida
+
+En la primera corrida los cuatro chequeos pasaron en el intento 1, a los 45 segundos. Render tarda
+varios minutos en construir una imagen, así que lo más probable es que esas respuestas las haya dado
+el contenedor **viejo**, que sigue sirviendo mientras el nuevo se construye.
+
+O sea que hoy el humo prueba que el entorno está sano, pero no que la versión nueva esté arriba. El
+cierre es preguntarle a la API de Render por el `deploy id` que devuelve el hook hasta que diga
+`live`, y recién ahí correr las pruebas. Queda pendiente.
+
+## Dos detalles del workflow que no se ven
+
+**`concurrency: deploy-prod`.** Dos merges seguidos largan dos despliegues. Sin encolarlos se pisan, y
+producción puede terminar con la versión **más vieja** de las dos — la que arrancó primero pero
+terminó después.
+
+**Los secrets se llaman igual en los dos entornos.** `RENDER_HOOK_API` existe en `qa` y en
+`production` con valores distintos. Por eso los dos jobs son idénticos salvo por las URLs: el job no
+elige el entorno, lo declara con `environment:`, y GitHub le entrega los secrets de ése y sólo de
+ése. La consecuencia que importa es la de seguridad: **el hook de producción no se puede leer desde
+el job de QA.** Los cargué con `gh secret set ... --env <entorno>` sin `--body`, que los pide por
+teclado, para que no queden en el historial de la terminal.
+
+## Lo que salió mal
+
+**El pipeline se cayó por algo que no era mío.** El build del frontend empezó a morir a los 20
+segundos con `429 Too Many Requests` al bajar `node:22-alpine`. Docker Hub limita las descargas
+anónimas por IP y los runners de GitHub comparten IP entre miles de proyectos: no era cuota mía, así
+que reintentar no servía — lo intenté dos veces con minutos de por medio. Lo resolví configurando
+buildx para bajar las imágenes de Docker Hub por un espejo público. La configuración va en el
+workflow y **no** en los Dockerfiles: el problema es de ese entorno, no de la definición de la imagen,
+que tiene que seguir funcionando igual en cualquier máquina. El frontend pasó de morir en 20s a
+construir en 45s.
+
+**La cadena de conexión de Neon no entra como viene.** Neon la da en formato URI
+—`postgresql://usuario:clave@host/base`— y Npgsql no la acepta: quiere `clave=valor`. El error,
+`Format of the initialization string does not conform to specification starting at index 0`, no dice
+nada de formatos de cadena y mandó a buscar al lado equivocado. Neon la ofrece ya convertida eligiendo
+«.NET» en el desplegable del panel de conexión. Dato al pasar: en ese fragmento Neon la llama
+`DefaultConnection` y mi app la busca como `Default`.
+
+**Las variables de .NET van con doble guión bajo.** `ConnectionStrings__Default` y `Jwt__Key`, no
+`JWT_KEY`. El doble guión bajo es cómo .NET escribe los dos puntos de `ConnectionStrings:Default` en
+una variable de entorno. Con un guión solo la app no la encuentra y arranca como si no existiera.
+
+**Las migraciones no corrían en Render.** El código decide si migrar y sembrar con
+`app.Environment.IsDevelopment()` como valor por defecto, y Render corre en Production: por defecto
+quedaba en `false` y la base se quedaba vacía, sin tablas y sin usuaria administradora. Hay que poner
+`AplicarMigracionesAlArrancar=true` y `SembrarDatosIniciales=true` explícitamente en cada servicio.
+
+## Declaración de uso de IA
+
+Usé IA (Claude) para escribir la plantilla de nginx, los jobs de deploy, el script de humo y para
+redactar este documento. Lo que hice y decidí yo:
+
+1. **Armé los cuatro servicios y las dos bases** — Neon, los cuatro servicios en Render, sus variables
+   de entorno, y apagar el auto-deploy en cada uno.
+2. **Decidí qué entorno lleva revisor y cuál no.** QA automático y producción con aprobación: esa
+   asimetría es la que hace que esto sea entrega continua.
+3. **Rechacé un despliegue con un motivo mío** y aprobé otro, y miré qué queda registrado de cada uno.
+4. **Cargué los cuatro hooks como secrets de entorno**, no del repositorio, para que el de producción
+   no sea legible desde el job de QA.
+5. **Verifiqué el aislamiento de los entornos** con el cruce de tokens, en vez de darlo por hecho
+   porque las URLs son distintas.
+
+Las dos limitaciones de arriba —que Render reconstruye en vez de bajar la imagen publicada, y que el
+humo puede estar midiendo el contenedor viejo— las dejo escritas a propósito. Las encontré mirando
+los tiempos de la primera corrida, y prefiero tenerlas anotadas antes que sostener que la cadena es
+más fuerte de lo que es.
