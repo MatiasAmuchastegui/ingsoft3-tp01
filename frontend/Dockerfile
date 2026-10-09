@@ -54,8 +54,27 @@ ENTRYPOINT ["npm", "run", "test:ci"]
 # ---------------------------------------------------------------------------
 FROM nginx:1.27-alpine AS final
 
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# La configuración va como PLANTILLA en templates/, no como archivo en conf.d/. El
+# entrypoint de la imagen oficial procesa lo que encuentre acá, reemplaza las ${VARIABLE}
+# por su valor del entorno, y deja el resultado en conf.d/ antes de arrancar nginx.
+#
+# Así la dirección del backend no queda horneada en la imagen: la MISMA imagen sirve en
+# cualquier entorno, y cada uno le pasa la suya. Es lo que hace posible promover la
+# imagen verificada en lugar de reconstruirla por entorno.
+COPY default.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /app/dist /usr/share/nginx/html
+
+# Por defecto, los valores del docker-compose del TP2: el nombre del servicio y el DNS
+# interno de Docker. Así `docker compose up` sigue funcionando sin tocar nada, y un
+# entorno de nube los pisa con los suyos.
+ENV BACKEND_URL=http://backend:8080 \
+    DNS_RESOLVER=127.0.0.11
+
+# Acota qué variables reemplaza el entrypoint. Sin esto sustituye TODAS las del entorno,
+# y si alguna se llamara igual que una variable de nginx —$host, $scheme, $uri— la
+# plantilla saldría con ese valor pegado y la configuración quedaría rota de una forma
+# muy difícil de leer.
+ENV NGINX_ENVSUBST_FILTER="^(BACKEND_URL|DNS_RESOLVER)$"
 
 # Documentación del puerto interno. El puerto del host lo define "ports:" en el compose.
 EXPOSE 80
