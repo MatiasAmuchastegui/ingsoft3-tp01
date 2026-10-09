@@ -1,0 +1,5 @@
+# Los scripts que corren en el runner tienen que llegar con finales de linea de Unix.
+# En Windows, Git convierte a CRLF al sacar el archivo del repo; si despues se vuelve a
+# commitear asi, el runner de Linux falla con "bad interpreter: /bin/bash^M", que es un
+# error que no dice en ningun lado que el problema son los finales de linea.
+*.sh text eol=lf
