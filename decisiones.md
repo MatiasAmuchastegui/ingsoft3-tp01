@@ -238,8 +238,19 @@ testeé:
 | `AlcanceLocales` | Una vendedora viendo o moviendo el stock de otro local. Es el agujero de permisos de la app |
 | `GeneradorTokenJwt` | Un token sin el claim de local deja a un vendedor sin alcance, o peor, con el de todos |
 
-Son 53 tests sobre 22 métodos, con las tres técnicas: `[Theory]` parametrizado, casos de error
+Son 53 tests sobre 31 métodos, con las tres técnicas: `[Theory]` parametrizado, casos de error
 con sus bordes exactos, y un mock sobre `IUsuarioActual`.
+
+El enunciado pide ocho métodos y escribí treinta y uno, y no fue una decisión de cantidad: **no
+conté tests, conté comportamientos.** El mínimo de ocho sobre cuatro reglas da dos por regla —uno
+que anda y uno que falla—, y ninguna de las mías entra en dos. `AlcanceLocales` sola tiene diez
+caminos distintos: un vendedor consultando otro local, consultando el suyo, sin filtrar; un admin
+sin filtro y con filtro; las tres variantes de escritura; y un vendedor sin local asignado, que no
+puede ni leer ni escribir. Escribir dos habría dejado ocho sin verificar.
+
+Igual la cantidad no es el criterio: treinta y un tests triviales valen menos que ocho bien
+elegidos. El criterio es si cada uno protege algo, y eso se comprueba rompiendo la regla a ver si
+algo se pone rojo — está más abajo, en el mutante.
 
 Lo que **no** testeé son los services asincrónicos —`MovimientoService`, `ProductoService`,
 `CategoriaService`, `StockService`—, y es una decisión y no un olvido: consultan la base, así que
@@ -269,6 +280,30 @@ con los filtros, y recién ahí puse el umbral.
 El del frontend es alto porque mide poco: `src/lib` son 25 líneas de funciones puras y las cubrí
 todas. 90 deja diez puntos de aire para que un refactor menor no rompa el build, pero frena cuando
 entra lógica sin tests — que es exactamente lo que pasó en la demostración.
+
+### Por qué un 18% y un 82% pueden ser los dos correctos
+
+Comparé mi umbral con el de un compañero que tiene **82,7%**, y conseguí los números de su proyecto
+para entender la diferencia. No testeamos distinta cantidad: **medimos cosas distintas.**
+
+| | Él | Yo |
+|---|---|---|
+| Arquitectura | Sin capa de services: la lógica vive adentro de los routers, mezclada con las queries | Services separados de los controllers |
+| Qué cubre su porcentaje | Los routers — 374 de 580 statements | Lógica pura — 96 de 1.430 líneas |
+| Con qué los cubre | **14 tests de integración** contra una base SQLite real, vía `TestClient` | Unit tests puros, sin IO |
+| Tests estrictamente unitarios | 9 funciones | 31 métodos |
+
+Su 82,7% viene en su mayor parte de **tests de integración**, no unitarios. El mío sale de no tocar
+la base en ningún test. Si yo levantara mi API con una base de prueba y le pegara a los endpoints,
+mis 830 líneas de services se cubrirían y mi número saltaría parecido: **puedo hacerlo, elegí no
+hacerlo**, porque el enunciado define unit test como el que corre sin tocar red, disco ni base.
+
+Lo confirma su propia medición: le pregunté qué pasaría si su proyecto tuviera 800 líneas de
+services sin cubrir, y la respuesta fue que caería a ~38%. O sea que el 82,7% no es un estándar de
+la materia: es una consecuencia de cómo está hecha su app.
+
+La conclusión que me llevo es que **el porcentaje solo no dice nada si no se sabe qué hay en el
+denominador**. Por eso el enunciado pide justificarlo y no acertarle.
 
 Los dos umbrales miran **línea y rama**. Con sólo líneas el freno es más débil: una condición
 ejecutada por un solo camino da 100% de línea y 50% de rama.
