@@ -12,6 +12,17 @@ on:
 jobs:
   build-backend:
     runs-on: ubuntu-latest
+
+    # Mínimo privilegio: sólo este job publica, así que sólo este job puede escribir
+    # paquetes. Declararlo a nivel del workflow REEMPLAZA el default para todos los jobs
+    # y le daría permiso de escritura a jobs que no publican nada.
+    #
+    # Lo que no se lista queda sin permiso: por eso `contents: read` no es de más — sin él
+    # el checkout no puede leer el código.
+    permissions:
+      contents: read
+      packages: write
+
     steps:
       - name: Qué estamos verificando
         env:
@@ -23,15 +34,6 @@ jobs:
 
       - name: Preparar el constructor que sabe cachear
         uses: docker/setup-buildx-action@v4
-
-      - name: Construir la imagen del backend
-        uses: docker/build-push-action@v7
-        with:
-          context: ./backend
-          push: false
-          tags: backend:ci
-          cache-from: type=gha,scope=backend
-          cache-to: type=gha,mode=max,scope=backend
 
       # ── Tests y cobertura ────────────────────────────────────────────────
       # Cada build tiene su propio scope de cache. Ahora el repo construye cuatro cosas
@@ -81,8 +83,51 @@ jobs:
             coveragereport
             TestResults/tests.trx
 
+      # ── El artefacto: lo que el pipeline ENTREGA cuando terminó de verificar ──
+      #
+      # Estos dos pasos van ÚLTIMOS, y ahí está toda la gracia: no hay ningún `if` que
+      # diga "si los tests pasaron". No hace falta. Los steps corren en orden y se cortan
+      # al primer error, así que si el `docker run` de los tests devolvió rojo, el job
+      # murió antes y acá no se llega nunca. La condición no está escrita: está en el orden.
+      #
+      # Por eso tampoco llevan `!cancelled()` como los del reporte: ése se puso justamente
+      # para que corriera con los tests en rojo, y acá sería lo contrario de lo que se busca.
+      - name: Entrar al registry
+        if: github.event_name == 'push'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          # No hace falta ningún secret nuevo: GitHub le da a cada corrida un token propio
+          # que vive lo que dura el job. La credencial se le pasa al comando que la
+          # necesita y no queda guardada en ningún lado.
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Construir y publicar la imagen del backend
+        uses: docker/build-push-action@v7
+        with:
+          context: ./backend
+          # Dos condiciones, no una. Con sólo el evento alcanzaría hoy, porque el workflow
+          # escucha main y los PR. Pero el día que se agregue otra rama al disparador, un
+          # push a esa rama publicaría algo que nunca pasó por un PR ni por los guardianes.
+          # La garantía conviene tenerla acá y no en el `on:` del archivo.
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          # En minúsculas y a mano: el registry no acepta mayúsculas, y
+          # ${{ github.repository }} devolvería "MatiasAmuchastegui/ingsoft3-tp01".
+          #
+          # La etiqueta es el COMMIT que produjo la imagen. Es lo que permite contestar
+          # "¿lo que está corriendo es lo que se verificó?" comparándola con el código.
+          tags: ghcr.io/matiasamuchastegui/ingsoft3-tp01-backend:sha-${{ github.sha }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
   build-frontend:
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
     steps:
       - name: Qué estamos verificando
         env:
@@ -94,15 +139,6 @@ jobs:
 
       - name: Preparar el constructor que sabe cachear
         uses: docker/setup-buildx-action@v4
-
-      - name: Construir la imagen del frontend
-        uses: docker/build-push-action@v7
-        with:
-          context: ./frontend
-          push: false
-          tags: frontend:ci
-          cache-from: type=gha,scope=frontend
-          cache-to: type=gha,mode=max,scope=frontend
 
       # ── Tests y cobertura ────────────────────────────────────────────────
       - name: Construir la etapa de tests del frontend
@@ -148,3 +184,23 @@ jobs:
         with:
           name: coverage-frontend
           path: frontend-coverage
+
+      # ── El artefacto ─────────────────────────────────────────────────────
+      # Últimos pasos del job, igual que en el backend: si los tests fallaron, acá no
+      # se llega. El orden ES la condición.
+      - name: Entrar al registry
+        if: github.event_name == 'push'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Construir y publicar la imagen del frontend
+        uses: docker/build-push-action@v7
+        with:
+          context: ./frontend
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          tags: ghcr.io/matiasamuchastegui/ingsoft3-tp01-frontend:sha-${{ github.sha }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
