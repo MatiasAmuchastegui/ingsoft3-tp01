@@ -702,6 +702,62 @@ una variable de entorno. Con un guión solo la app no la encuentra y arranca com
 quedaba en `false` y la base se quedaba vacía, sin tablas y sin usuaria administradora. Hay que poner
 `AplicarMigracionesAlArrancar=true` y `SembrarDatosIniciales=true` explícitamente en cada servicio.
 
+## Lo que medí
+
+La corrida completa, de merge a producción:
+
+| | |
+|---|---|
+| `build-backend` | 1m 27s |
+| `build-frontend` | 0m 31s |
+| `deploy-qa` | 0m 56s |
+| *(esperando mi aprobación)* | 1m 47s |
+| `deploy-prod` | **0m 56s** |
+
+Los 56 segundos de `deploy-prod` son el número que importa: el reloj del job arranca **en el momento
+en que apruebo**, porque mientras espera permiso el job no está corriendo. Así que esa duración es
+exactamente el tiempo entre que aprieto *Approve* y que producción queda verificada.
+
+De esos 56 segundos, 45 son la pausa que puse a mano en el script de humo. El resto es disparar los
+dos hooks y las cuatro comprobaciones. Lo cual, dicho sea de paso, confirma la limitación que anoté
+más arriba: producción contestó antes de que Render pudiera haber terminado de construir.
+
+El minuto y 47 de espera es tiempo mío, no del sistema. En un equipo de verdad eso puede ser un día.
+Es la parte que el pipeline no puede acelerar, y es a propósito.
+
+## Comprobé que QA y producción no comparten base
+
+Las dos listas de categorías daban igual —`Anillos, Aros, Collares, Pulseras`— pero eso no prueba
+nada: las dos bases arrancan del mismo seed, así que coincidirían igual si fueran la misma. Hace
+falta un dato que exista en una sola.
+
+Creé una categoría sólo en producción y volví a listar las dos:
+
+```
+POST /api/categorias en PROD → 201  (MARCA-SOLO-PROD)
+
+QA    → Anillos, Aros, Collares, Pulseras
+PROD  → Anillos, Aros, Collares, MARCA-SOLO-PROD, Pulseras
+```
+
+Dos bases, confirmado. Lo dejo escrito porque la primera comparación era la trampa: parecía una
+verificación y no verificaba nada.
+
+## El plan gratuito apaga los servicios
+
+Once días después del despliegue, el primer pedido por el frontend dio **502**. Los dos backends
+estaban dormidos —Render apaga los servicios sin tráfico en el plan gratuito— y tardaron **33
+segundos** en despertar. Después de eso, todo normal.
+
+No es un error de la app, pero cambia dos cosas prácticas:
+
+- El `proxy_read_timeout` de nginx está en 75s justamente por esto. Con los 30s que tenía en el TP2,
+  el primer pedido después de un rato cortaba siempre.
+- El script de humo arranca con una pausa y reintenta 30 veces cada 20 segundos. Un smoke test sin
+  reintentos daría rojo en un entorno que está perfecto, sólo porque estaba dormido.
+
+Vale la pena saberlo antes de abrir la app en una defensa: conviene despertarla unos minutos antes.
+
 ## Declaración de uso de IA
 
 Usé IA (Claude) para escribir la plantilla de nginx, los jobs de deploy, el script de humo y para
