@@ -43,7 +43,7 @@ export interface Categoria {
 }
 
 export interface GuardarCategoria {
-  nombre: string
+  name: string
   prefijoSku: string
 }
 
