@@ -316,10 +316,115 @@ jobs:
             echo "| api | https://ingsoft3-tp01-jx17.onrender.com |"
           } >> $GITHUB_STEP_SUMMARY
 
-  deploy-prod:
-    # QA primero, siempre. Nada llega a producción sin haber estado arriba y verde en un
-    # entorno equivalente.
+  # ══════════════════════════════════════════════════════════════════════════
+  # Las pruebas contra QA: el gate antes de producción
+  # ══════════════════════════════════════════════════════════════════════════
+  #
+  # QA ya está ejecutando la imagen de esta corrida. Antes de que nadie pueda aprobar
+  # producción, dos suites la usan de verdad, en este orden:
+  #
+  #   integracion  le habla a la api directo, sin navegador: ¿la api y su base se entienden?
+  #   e2e          usa la app con un navegador: ¿una persona puede hacer lo que vino a hacer?
+  #
+  # Primero la barata. Si la api está rota no vale la pena levantar un navegador para
+  # confirmarlo: la e2e no corre, y eso también dice algo — el roto es la api, no el front.
+  # Y al revés: integración verde con e2e roja dice que la api está sana y que el que la usa
+  # mal es el front.
+  #
+  # Ningún paso de estos jobs lleva continue-on-error, ni `|| true`, ni if: always(): con
+  # cualquiera de ellos la suite podría fallar y la promoción seguir igual. Los únicos
+  # !cancelled() son los de los pasos que publican el reporte, que importa MÁS cuando falla, y
+  # que no pueden volver verde un job que ya quedó rojo.
+
+  integracion:
     needs: deploy-qa
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Bajar el código al runner
+        uses: actions/checkout@v6
+
+      - name: Preparar Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # Sin `playwright install`: estas pruebas no abren ningún navegador.
+      - name: Instalar dependencias
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Integración contra la api de QA
+        working-directory: ./frontend
+        env:
+          API_BASE_URL: https://ingsoft3-tp01-jx17.onrender.com # la API, no el front
+          E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+        run: npx playwright test e2e/api.spec.ts
+
+      - name: Publicar el resumen de la integración
+        if: ${{ !cancelled() }}
+        working-directory: ./frontend
+        run: node ../.github/scripts/resumen-playwright.js "Integración contra la api de QA" >> $GITHUB_STEP_SUMMARY
+
+      # Sin retention-days: con el default (90 días) el reporte sigue ahí para la corrección y
+      # la defensa. Con los 7 de la guía, la evidencia de la corrida roja habría vencido antes.
+      - name: Publicar el reporte de la integración
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: playwright-report-integracion # distinto del de la e2e: dos iguales rompen la corrida
+          path: frontend/playwright-report
+
+  e2e:
+    needs: integracion # si la api está rota, no se gasta un navegador en confirmarlo
+    runs-on: ubuntu-latest
+    timeout-minutes: 20 # si algo se cuelga, el job muere en vez de esperar horas
+
+    steps:
+      - name: Bajar el código al runner
+        uses: actions/checkout@v6
+
+      - name: Preparar Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Instalar dependencias y el navegador
+        working-directory: ./frontend
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: e2e contra QA
+        working-directory: ./frontend
+        env:
+          E2E_BASE_URL: https://joyeria-front-qa.onrender.com # el FRONT
+          E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+        run: npx playwright test e2e/flujos.spec.ts # su archivo: sin esto volvería a correr la integración
+
+      - name: Publicar el resumen de la e2e
+        if: ${{ !cancelled() }}
+        working-directory: ./frontend
+        run: node ../.github/scripts/resumen-playwright.js "e2e contra QA" >> $GITHUB_STEP_SUMMARY
+
+      - name: Publicar el reporte de la e2e
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: playwright-report-e2e
+          path: frontend/playwright-report
+
+  deploy-prod:
+    # EL gate. Sin las dos suites en verde contra QA, este job ni siquiera llega a pedir
+    # aprobación: la promoción se frena en QA, que es donde tiene que frenarse.
+    needs: e2e
 
     runs-on: ubuntu-latest
 

@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { configDefaults } from 'vitest/config'
 
 export default defineConfig({
   plugins: [react()],
@@ -11,6 +12,11 @@ export default defineConfig({
   },
 
   test: {
+    // Los specs de e2e/ son de Playwright, no de vitest. Sin esta línea vitest los toma como
+    // propios —matchea cualquier *.spec.*—, explota con un error que no dice eso, y pone en
+    // rojo build-frontend: con él, la cadena entera.
+    exclude: [...configDefaults.exclude, 'e2e/**'],
+
     coverage: {
       provider: 'v8',
 

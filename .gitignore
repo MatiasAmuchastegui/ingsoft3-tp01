@@ -27,6 +27,10 @@ Thumbs.db
 *.user
 *.suo
 
+# Reportes y resultados de Playwright: se generan en cada corrida y viajan como artefacto.
+playwright-report/
+test-results/
+
 # ---- Vite / TypeScript ----
 *.tsbuildinfo
 .vite/
