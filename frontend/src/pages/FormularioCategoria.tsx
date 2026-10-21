@@ -35,7 +35,7 @@ export default function FormularioCategoria({ categoria, onCerrar, onGuardado }:
     setEnviando(true)
     setError(null)
     try {
-      const datos = { name: nombre.trim(), prefijoSku }
+      const datos = { nombre: nombre.trim(), prefijoSku }
       if (categoria) {
         await api.categorias.actualizar(categoria.id, datos)
       } else {
