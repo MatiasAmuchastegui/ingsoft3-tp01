@@ -35,5 +35,16 @@ test-results/
 *.tsbuildinfo
 .vite/
 
+# ---- Terraform (TP8) ----
+# El estado guarda en texto plano todo lo que Terraform sabe de la infraestructura,
+# contraseñas incluidas. Vive sólo en la máquina del que aplica y no se versiona nunca.
+*.tfstate
+*.tfstate.*
+.terraform/
+# Valores locales que no se publican.
+*.tfvars
+# Un plan guardado con -out también lleva los valores sensibles adentro.
+*.tfplan
+
 # ---- Herramientas ----
 .claude/settings.local.json
