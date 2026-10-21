@@ -758,6 +758,43 @@ No es un error de la app, pero cambia dos cosas prácticas:
 
 Vale la pena saberlo antes de abrir la app en una defensa: conviene despertarla unos minutos antes.
 
+## El rollback, y los dos números que no son el mismo
+
+Volví producción a la versión anterior desde Render —*Deploys* → el deploy previo → *Rollback to
+this version*— y medí las dos cosas a la vez: lo que tardó Render, y lo que estuvo caída la app
+vista desde afuera.
+
+| | |
+|---|---|
+| Lo que tardó el rollback, según Render | **~11 s** |
+| Lo que estuvo sin responder, consultándola desde afuera | **0 s** |
+
+La segunda la medí con una sonda que pedía la página cada 2 segundos y anotaba cada cambio de
+estado. No anotó ninguno: devolvió `200` de principio a fin.
+
+No son el mismo número y la diferencia es el punto. Render no apaga el contenedor viejo para prender
+el nuevo: lo deja sirviendo hasta que el nuevo está sano, y recién ahí mueve el tráfico. Los 11
+segundos son trabajo suyo; quien estaba usando la app no vio nada.
+
+Dos aclaraciones que prefiero dejar escritas:
+
+- La sonda muestrea cada 2 segundos, así que un corte más breve se me habría escapado. Lo que puedo
+  afirmar es que no hubo caída de 2 segundos o más.
+- Entre las dos versiones sólo cambiaba este documento, así que el rollback no tenía nada visible
+  que revertir. Mide la **capacidad** de volver atrás y su costo en tiempo, que es lo mismo sea cual
+  sea el cambio, pero no demuestra un comportamiento distinto antes y después.
+
+### Por qué el rollback es rápido y el despliegue no
+
+Un despliegue normal tarda minutos y este rollback tardó segundos, y la razón es la misma limitación
+que anoté más arriba: **Render construye desde el repositorio.** Desplegar implica compilar la imagen
+de cero. Volver atrás, no: esa imagen ya existe, así que es apuntar a ella.
+
+O sea que el camino rápido para volver atrás existe precisamente porque Render guarda sus builds
+anteriores. Si el rollback se hiciera por el pipeline —relanzando el `deploy-prod` de una corrida
+vieja— tardaría lo mismo que un despliegue, porque volvería a construir. La contrapartida es que ese
+camino sí pasa por la aprobación y queda registrado en el repo, y el botón de Render no.
+
 ## Declaración de uso de IA
 
 Usé IA (Claude) para escribir la plantilla de nginx, los jobs de deploy, el script de humo y para
@@ -772,6 +809,8 @@ redactar este documento. Lo que hice y decidí yo:
    no sea legible desde el job de QA.
 5. **Verifiqué el aislamiento de los entornos** con el cruce de tokens, en vez de darlo por hecho
    porque las URLs son distintas.
+6. **Hice el rollback y lo medí por los dos lados**, el de Render y el del usuario. Los números no
+   coincidieron, y ésa terminó siendo la parte interesante del ejercicio.
 
 Las dos limitaciones de arriba —que Render reconstruye en vez de bajar la imagen publicada, y que el
 humo puede estar midiendo el contenedor viejo— las dejo escritas a propósito. Las encontré mirando
