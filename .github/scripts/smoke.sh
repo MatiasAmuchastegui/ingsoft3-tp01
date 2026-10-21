@@ -6,6 +6,9 @@
 # responde. Un deploy puede salir "exitoso" y dejar la app sin base, sin configuración o
 # sirviendo la página en blanco.
 #
+# Prueba que el entorno RESPONDE, no que FUNCIONA: eso lo prueban la integración y las e2e.
+# Por eso acá no hay ningún login, y el script no lleva credenciales.
+#
 # Uso:  smoke.sh <url-del-front> <url-de-la-api>
 set -euo pipefail
 
@@ -15,24 +18,21 @@ API=${2:?falta la url de la api}
 INTENTOS=30
 ESPERA=20
 
-# Render tarda en construir y, mientras tanto, la versión vieja sigue contestando. Esta
-# pausa inicial evita el falso positivo más obvio: dar por bueno el deploy porque
-# respondió el contenedor anterior, que todavía no se bajó.
+# Render tarda en bajar la imagen y arrancarla y, mientras tanto, la versión vieja sigue
+# contestando. Esta pausa inicial evita el falso positivo más obvio: dar por bueno el
+# deploy porque respondió el contenedor anterior, que todavía no se bajó.
 echo "Dando tiempo a que Render levante la versión nueva..."
 sleep 45
 
-# $1 nombre para el log, $2 url, $3 metodo, $4 cuerpo (opcional)
+# $1 nombre para el log, $2 url
 esperar() {
-  local nombre=$1 url=$2 metodo=${3:-GET} cuerpo=${4:-}
+  local nombre=$1 url=$2
   local i codigo
 
   for i in $(seq 1 $INTENTOS); do
-    if [ -n "$cuerpo" ]; then
-      codigo=$(curl -s -o /tmp/respuesta -w '%{http_code}' --max-time 30 \
-        -X "$metodo" "$url" -H 'Content-Type: application/json' -d "$cuerpo" || echo 000)
-    else
-      codigo=$(curl -s -o /tmp/respuesta -w '%{http_code}' --max-time 30 "$url" || echo 000)
-    fi
+    # Si no hay conexión, -w igual escribe 000; el `|| codigo=000` sólo evita que el
+    # `set -e` corte el script en el primer intento fallido.
+    codigo=$(curl -s -o /tmp/respuesta -w '%{http_code}' --max-time 30 "$url") || codigo=000
 
     if [ "$codigo" = "200" ]; then
       echo "  OK  $nombre (intento $i)"
@@ -60,11 +60,10 @@ esperar "nginx esta vivo"            "$FRONT/nginx-health"
 #    así que un 200 acá descarta también que la cadena de conexión esté mal.
 esperar "la api responde y ve la base" "$API/health"
 
-# 3. El camino de verdad, el que usa el navegador: entra por nginx, sale por el proxy,
-#    llega al backend y consulta la base. Es el único endpoint que toca datos sin pedir
-#    un token antes, así que es el que se puede probar desde afuera.
-esperar "login a traves del front" "$FRONT/api/auth/login" POST \
-  '{"email":"admin@joyeria.local","password":"Admin123!"}'
+# 3. El camino que usa el navegador: entra por nginx, el proxy lo manda al backend y el
+#    healthcheck consulta la base. Si BACKEND_URL estuviera mal cargada en el front, esto
+#    falla aunque lo de arriba ande.
+esperar "la api responde a traves del front" "$FRONT/health"
 
 echo
 echo "Humo limpio."

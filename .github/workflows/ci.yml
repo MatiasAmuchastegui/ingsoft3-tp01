@@ -263,24 +263,39 @@ jobs:
       - name: Qué se va a desplegar
         run: echo "Commit $GITHUB_SHA · imágenes sha-$GITHUB_SHA"
 
-      # El hook es una URL secreta: un POST ahí dispara un deploy de ese servicio.
+      # El hook es una URL secreta: un pedido ahí dispara un deploy de ese servicio.
       #
-      # El `&ref=` es lo que convierte esto en entrega continua de verdad. Sin él, Render
-      # despliega la punta de main, que para cuando el hook llega puede tener commits que
-      # este pipeline nunca verificó. Con él, despliega EXACTAMENTE el commit que acaba de
-      # pasar por los tests.
+      # Hasta el TP6 llevaba `&ref=<commit>` y Render RECONSTRUÍA la app desde el repo: lo
+      # que corría no era la imagen que pasó los tests, sino otra construcción del mismo
+      # código. Ahora el servicio ejecuta una imagen del registry, y `imgURL` le dice cuál:
+      # la que publicó esta corrida, etiquetada con su commit. Como no hay nada que
+      # construir, el `ref` ya no va.
       #
-      # El secret va por `env:` y no interpolado en el `run:`: así el valor no aparece en
-      # el comando que GitHub imprime en el log.
-      - name: Desplegar el backend en QA
+      # Render sólo deja cambiar la etiqueta. Si la imagen no es la del servicio, o la
+      # etiqueta no existe, contesta 400, y el -f del curl pone la corrida en rojo.
+      #
+      # --get con --data-urlencode agrega `&imgURL=…` a la URL del hook, que ya trae su
+      # `?key=`, y codifica los `:` y `/` de la imagen. La URL del hook va última porque
+      # --data-urlencode se lleva el valor que tiene al lado.
+      #
+      # El hook va por `env:` y no escrito en el `run:`, así no aparece en el log. La imagen
+      # sí se imprime, a propósito: es lo que permite leer en el log que QA y producción
+      # recibieron la misma.
+      - name: Desplegar en QA la imagen del backend
         env:
           HOOK: ${{ secrets.RENDER_HOOK_API }}
-        run: curl -fsS -X POST "$HOOK&ref=$GITHUB_SHA" > /dev/null
+          IMAGEN: ghcr.io/matiasamuchastegui/ingsoft3-tp01-backend:sha-${{ github.sha }}
+        run: |
+          echo "imgURL=$IMAGEN"
+          curl -fsS --max-time 30 --get --data-urlencode "imgURL=$IMAGEN" "$HOOK"
 
-      - name: Desplegar el frontend en QA
+      - name: Desplegar en QA la imagen del frontend
         env:
           HOOK: ${{ secrets.RENDER_HOOK_FRONT }}
-        run: curl -fsS -X POST "$HOOK&ref=$GITHUB_SHA" > /dev/null
+          IMAGEN: ghcr.io/matiasamuchastegui/ingsoft3-tp01-frontend:sha-${{ github.sha }}
+        run: |
+          echo "imgURL=$IMAGEN"
+          curl -fsS --max-time 30 --get --data-urlencode "imgURL=$IMAGEN" "$HOOK"
 
       # Si esto falla, el job queda rojo y deploy-prod no corre. Es el filtro que impide
       # que un QA roto llegue a producción.
@@ -332,15 +347,23 @@ jobs:
       - name: Qué se va a desplegar
         run: echo "Promoviendo a producción el commit $GITHUB_SHA, ya verificado en QA"
 
-      - name: Desplegar el backend en producción
+      # La MISMA imagen que se desplegó y se probó en QA: el `sha-` de esta corrida.
+      # Promover es decirle a producción qué imagen ejecutar, no volver a construir.
+      - name: Desplegar en producción la imagen del backend
         env:
           HOOK: ${{ secrets.RENDER_HOOK_API }}
-        run: curl -fsS -X POST "$HOOK&ref=$GITHUB_SHA" > /dev/null
+          IMAGEN: ghcr.io/matiasamuchastegui/ingsoft3-tp01-backend:sha-${{ github.sha }}
+        run: |
+          echo "imgURL=$IMAGEN"
+          curl -fsS --max-time 30 --get --data-urlencode "imgURL=$IMAGEN" "$HOOK"
 
-      - name: Desplegar el frontend en producción
+      - name: Desplegar en producción la imagen del frontend
         env:
           HOOK: ${{ secrets.RENDER_HOOK_FRONT }}
-        run: curl -fsS -X POST "$HOOK&ref=$GITHUB_SHA" > /dev/null
+          IMAGEN: ghcr.io/matiasamuchastegui/ingsoft3-tp01-frontend:sha-${{ github.sha }}
+        run: |
+          echo "imgURL=$IMAGEN"
+          curl -fsS --max-time 30 --get --data-urlencode "imgURL=$IMAGEN" "$HOOK"
 
       # Mismo script y mismas pruebas que en QA, con otras URLs. Que sea el mismo archivo
       # no es ahorro de tipeo: es la garantía de que producción se valida con el mismo
