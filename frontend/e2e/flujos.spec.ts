@@ -97,8 +97,16 @@ test('una entrada suma al stock, y una venta lo deja como estaba', async ({ page
   // El select está ADENTRO de su <label>, así que el texto de la etiqueta incluye las
   // opciones. Por su rol y su nombre accesible —«Local»— se lo encuentra igual que lo
   // anuncia un lector de pantalla.
+  //
+  // Elegir el local dispara otro pedido al servidor, y hasta que la respuesta se dibuja la
+  // tabla muestra lo de antes o una fila «Cargando…». Leer en ese momento es leer otra cosa:
+  // contra un servidor lento, el test llegó a tomar «Cargando…» como si fuera un SKU. Por eso
+  // se espera ESE pedido, y después a que la tabla deje de estar cargando.
+  const filtrado = page.waitForResponse((r) => r.url().includes('/api/stock') && r.url().includes('localId='))
   await page.getByRole('combobox', { name: 'Local' }).selectOption({ index: 1 })
+  expect((await filtrado).ok(), 'el stock del local llegó bien').toBe(true)
   const stock = page.getByRole('table').first()
+  await expect(stock.getByRole('row', { name: 'Cargando…' })).toHaveCount(0)
   await expect(stock.getByRole('button', { name: 'Movimiento' }).first()).toBeVisible()
 
   // textContent y no innerText: innerText devuelve el texto como se VE, y el CSS pone los
