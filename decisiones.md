@@ -1214,3 +1214,52 @@ smoke reintenta, y por eso conviene despertar los dos entornos unos minutos ante
 ## Declaración de uso de IA
 
 (pendiente: lo completo yo)
+
+# Decisiones — TP8
+
+## Riel y versiones
+
+Riel canónico: **Terraform** contra los mismos proveedores del TP6, **Neon** y **Render**. El
+entorno declarado es uno nuevo, `preprod`, en `infra/`. QA y producción no se tocaron.
+
+| | Versión fijada | |
+|---|---|---|
+| Terraform | 1.16.6 (`required_version = ">= 1.5"`) | la cátedra midió con 1.15.8 |
+| `kislerdm/neon` | 0.18.0 | la última publicada; su repositorio está archivado y `init` lo informa como *self-signed* |
+| `render-oss/render` | 1.9.1 | la última publicada; firmado por un partner de HashiCorp |
+| `hashicorp/random` | 3.9.1 | para la clave JWT de la api (ver abajo) |
+
+El `.terraform.lock.hcl` fija además el hash de cada uno. Preprod corre la imagen de `v7.0.0`,
+la misma que producción, y su base está en la misma región (`aws-sa-east-1`) y con la misma
+versión de Postgres (18) que la de producción.
+
+## Problemas y cómo los resolví
+
+**Neon no creaba nada sin `org_id`.** La API contestó *«org_id is required»*: la cuenta de Neon
+es una organización, y el ejemplo de la guía no lo trae. Agregué `org_id` al `neon_project` como
+variable; es un identificador, no un secreto.
+
+**La api necesitaba más que la cadena de conexión.** La guía le pasa sólo
+`ConnectionStrings__Default`, pero mi api no arranca sin `Jwt__Key`, y en Render corre en
+Production, donde por defecto no aplica migraciones ni siembra datos. La clave la genera
+Terraform con `random_password`: nadie la escribe, vive sólo en el estado y es distinta de la de
+QA y de la de producción. Los dos interruptores de migraciones y seed van como variables del
+servicio. Con eso, la base, que nace vacía, tiene sus tablas y sus datos iniciales la primera
+vez que la api arranca.
+
+**El `.gitignore` de la guía no cubría los planes guardados.** Apliqué siempre un plan guardado
+con `-out`, para ejecutar exactamente lo que había revisado, y ese archivo también lleva los
+valores sensibles. Agregué `*.tfplan` antes del primer apply.
+
+**Lo que medí y la guía dejaba abierto.** Al destruir y recrear, Render devolvió **las mismas
+URLs**, porque los nombres habían quedado libres. Neon, en cambio, devolvió **otro host** de base.
+Ésa es la prueba de por qué la cadena se arma y no se copia: pegada a mano la primera vez,
+preprod habría renacido apuntando a una base que ya no existe.
+
+**Los servicios de Render no se modifican.** El provider no puede actualizar un servicio del plan
+gratuito, así que en Render sólo se crea y se destruye. No hizo falta cambiar ninguno: la segunda
+pasada, con preprod completo, dio *No changes* también en Render.
+
+## Declaración de uso de IA
+
+(pendiente: lo completo yo)
