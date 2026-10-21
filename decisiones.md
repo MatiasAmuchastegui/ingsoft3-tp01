@@ -1,3 +1,39 @@
+# Enlaces del TP7
+
+Van acá arriba porque viven afuera del repositorio y la corrección no los busca. Los del TP6
+siguen en su sección, más abajo.
+
+**Las dos imágenes, públicas.** Cada merge a `main` publica una por commit, con la etiqueta
+`sha-<commit>` de 40 caracteres. La que corre en producción es la del commit al que apunta
+`v7.0.0`.
+
+| | |
+|---|---|
+| Backend | https://github.com/MatiasAmuchastegui/ingsoft3-tp01/pkgs/container/ingsoft3-tp01-backend |
+| Frontend | https://github.com/MatiasAmuchastegui/ingsoft3-tp01/pkgs/container/ingsoft3-tp01-frontend |
+
+**La corrida donde la integración quedó verde y la e2e roja**, y la promoción se frenó:
+
+| | |
+|---|---|
+| El commit que rompió la app | https://github.com/MatiasAmuchastegui/ingsoft3-tp01/commit/247d8bcf6c27b8a079e50edd1e836263317d5def |
+| La corrida | https://github.com/MatiasAmuchastegui/ingsoft3-tp01/actions/runs/39529017346 |
+| `playwright-report-integracion` (verde) | https://github.com/MatiasAmuchastegui/ingsoft3-tp01/actions/runs/39529017346/artifacts/12314926096 |
+| `playwright-report-e2e` (rojo) | https://github.com/MatiasAmuchastegui/ingsoft3-tp01/actions/runs/39529017346/artifacts/12314991331 |
+
+**La corrida completa en verde después del arreglo, hasta producción:**
+https://github.com/MatiasAmuchastegui/ingsoft3-tp01/actions/runs/39531146035
+
+**Los entornos, vivos hasta la defensa:**
+
+| | Front | API |
+|---|---|---|
+| QA | https://joyeria-front-qa.onrender.com | https://ingsoft3-tp01-jx17.onrender.com |
+| Producción | https://joyeria-front-prod.onrender.com | https://ingsoft3-tp01-1.onrender.com |
+
+El plan gratuito duerme los servicios sin tráfico: el primer pedido después de un rato tarda
+alrededor de 30 segundos.
+
 # Decisiones — TP1
 
 ## 1. Por qué Git no pudo resolver el conflicto solo
@@ -816,3 +852,365 @@ Las dos limitaciones de arriba —que Render reconstruye en vez de bajar la imag
 humo puede estar midiendo el contenedor viejo— las dejo escritas a propósito. Las encontré mirando
 los tiempos de la primera corrida, y prefiero tenerlas anotadas antes que sostener que la cadena es
 más fuerte de lo que es.
+
+# Decisiones — TP7
+
+## Qué cambió respecto del TP6
+
+En el TP6 el pipeline ya publicaba una imagen por commit, pero Render no la usaba: con el
+`&ref=` del hook, **reconstruía** la app desde el repositorio en cada deploy. Lo dejé anotado
+como limitación, y este TP la cierra. La cadena quedó así:
+
+```
+PR → merge → build + tests → imagen sha-<commit>
+   → QA ejecuta ESA imagen → smoke
+   → integración contra la api de QA → e2e contra el front de QA
+   → aprobación → producción ejecuta LA MISMA imagen → smoke
+```
+
+## Build once, deploy many
+
+En el TP6 cada commit se construía tres veces: una en el pipeline —la que pasaba los tests—,
+otra cuando Render desplegaba QA y otra cuando desplegaba producción. Los tres builds salían
+del mismo commit, pero nada garantizaba que salieran iguales.
+
+El ejemplo lo tenía en mis propios Dockerfiles. Arrancan de etiquetas que se mueven:
+`mcr.microsoft.com/dotnet/sdk:8.0`, `aspnet:8.0`, `node:22-alpine`, `nginx:1.27-alpine`. Cada
+una apunta a la última versión publicada de esa base. El pipeline las resolvía en su build
+—algunas a través de un espejo, por el 429 de Docker Hub del TP6—, y Render volvía a resolverlas
+en el suyo, minutos después. Si en el medio salía una versión nueva de alguna, QA y producción
+corrían una imagen que mis tests nunca vieron, del mismo commit, y yo no tenía forma de
+demostrar lo contrario. Fijar la
+versión en el `FROM` achicaría el problema, pero seguiría construyendo dos veces.
+
+Ahora se construye **una vez**. La imagen que pasó los tests es la que se publica, y QA y
+producción ejecutan ésa, bit a bit. El hook dejó de decir «construí el commit X» y pasó a decir
+«ejecutá la imagen `sha-X`».
+
+Se nota también en el tiempo. El primer servicio que pasé a imagen quedó *live* en **11
+segundos**; reconstruyendo desde el repo, en el TP6, eran minutos.
+
+## Las etiquetas
+
+| | Dónde vive | Qué garantiza |
+|---|---|---|
+| `sha-<commit>` | el registry, en las dos imágenes | de qué commit salió esa imagen. Es la que viaja en el hook |
+| `v7.0.0` | git | el nombre de una versión que anduvo en producción |
+
+**Se promueve por `sha-<commit>`.** Es lo que el hook manda, y como backend y frontend salen de
+la misma corrida, llevan la misma etiqueta: entre una y otra sólo cambia `-backend` por
+`-frontend`.
+
+**El pipeline no publica `latest`.** `latest` es un puntero, no una versión: dice «lo último
+que se publicó», haya pasado las e2e o no. Un deploy que lo nombrara no podría decir qué
+desplegó. Con una sola etiqueta por imagen, la de su commit, no hay forma de desplegar algo sin
+decir exactamente qué es.
+
+**Las etiquetas igual se pueden mover.** Volver a correr la corrida de un commit publicaría otra
+vez `sha-<ese commit>`, y el contenido podría no ser el mismo. Por eso una corrida vieja no se
+relanza para desplegar. Lo único que nadie puede mover es el digest (`@sha256:…`), la huella
+del contenido; no lo uso porque habría que pasarlo de un job a otro, y la etiqueta del commit se
+arma sola.
+
+### Con qué imagen configuré Render, y por qué no es la que corre
+
+A los cuatro servicios les cambié la fuente a *Existing Image* con la API de Render, sin
+recrearlos, así que conservan URL, variables, deploy hooks e historial. Comprobé que los
+cuatro conservaran sus variables, comparando los nombres —los valores no los imprimí: ahí está
+la cadena de conexión—. Cambiar la fuente no desplegó
+nada: siguieron corriendo lo último que habían construido hasta que los desplegó el pipeline.
+
+La imagen que les puse es la del último merge del TP6, `sha-7251717…`, que antes había bajado
+sin credenciales. Pero es sólo el punto de partida. Render exige que el hook nombre el mismo
+registry y la misma imagen, y deja cambiar la etiqueta, así que cada deploy del pipeline manda la
+suya. La configuración queda clavada en `sha-7251717…` y el servicio corre la del último merge.
+
+¿Cómo sé cuál corre sin entrar al panel? En **Deployments** del repo: cada entorno muestra el
+commit de su último deploy, y la imagen es `sha-<ese commit>`.
+
+Esto abre una trampa: el botón *Manual Deploy* de Render despliega la imagen de la
+configuración, no la que está corriendo. Apretarlo volvería producción a `sha-7251717…`, en verde
+y sin avisar. Si hace falta redesplegar, se hace desde una corrida.
+
+## Del tag a la imagen, en un paso
+
+`git rev-list -n1 v7.0.0` da el commit, y las dos imágenes de ese commit están en los paquetes
+como `sha-<commit>`. Volver a esa versión sería mandarle esa imagen al hook, con el mismo
+mecanismo del deploy. No lo practiqué acá: el rollback fue del TP6.
+
+## Cómo se comprueba desde afuera que un entorno ejecuta la imagen
+
+Tienen que coincidir tres lugares:
+
+1. **El log de la corrida**: el `imgURL=…:sha-<commit>` de cada deploy y la respuesta del hook,
+   que trae el id del deploy.
+2. **Render**: ese mismo id, *Triggered via Deploy Hook*, ejecutando la imagen `sha-<commit>`.
+3. **El paquete**: la etiqueta existe.
+
+Lo comprobé en la primera corrida que desplegó imágenes. Los ids que devolvió el hook en el log
+—`dep-dbc0nguq…` en la api y `dep-dbc0nhjn…` en el front— eran los que Render tenía *live*, con
+trigger `deploy_hook` y la imagen `sha-a32c3b8…` del merge. Y en producción, después de
+aprobar, el mismo `imgURL` que en QA.
+
+**Lo que el smoke no alcanza a probar es justamente eso.** El smoke pregunta «¿respondés?», y
+mientras Render levanta la imagen nueva, la vieja sigue contestando. Si un deploy fallara, el
+servicio seguiría sirviendo la versión anterior y el smoke daría verde igual. Cerrarlo
+automáticamente necesita dos mitades: que la imagen lleve horneado el commit que la produjo, y
+que el smoke compare el que devuelve la api con el de la corrida. Queda como concepto.
+
+En la corrida roja lo revisé a mano, porque ahí importaba: el front de QA quedó *live* con
+`sha-247d8bc…` a las 01:45:33 (hora UTC), y la e2e arrancó a las 01:46:43. Probó la imagen rota,
+no la anterior.
+
+## Las dos suites
+
+Las dos corren con Playwright contra QA desplegado, y viven en `frontend/e2e/`.
+
+**Integración** (`api.spec.ts`): le habla a la api de QA directo, sin navegador, con el fixture
+`request`, que es un cliente HTTP.
+
+| Prueba | Qué comprueba |
+|---|---|
+| Alta y borrado de una categoría | `POST` → 201; un `GET` aparte la encuentra; `DELETE` → 204; otro `GET` ya no la encuentra |
+| Nombre vacío | la api contesta 409 con el motivo, y la cantidad de categorías no cambió |
+| Entrada y venta de stock | la entrada sube el stock en la base, el movimiento quedó guardado con su fecha, y la venta lo deja como estaba |
+
+**E2E** (`flujos.spec.ts`): la app con Chromium, como la usa una persona.
+
+| Prueba | Qué comprueba |
+|---|---|
+| Crear una categoría | aparece en la lista; eliminarla la saca |
+| Un prefijo que ya usa otra categoría | el usuario ve el error que habla de *su* prefijo, y al recargar no se creó nada |
+| Entrada y venta de stock, desde la pantalla | la cantidad sube a la vista, y después vuelve a la de antes |
+
+Las que crean datos usan un nombre con la hora adentro, para que ninguna otra corrida use el
+mismo, y comprueban al final que lo que crearon ya no está. Las credenciales llegan por secrets:
+ningún archivo del repo las tiene.
+
+### La tercera de cada una
+
+En las dos elegí el movimiento de stock. Es lo que se hace todos los días en el mostrador —la
+pantalla de Stock es la principal de la app—, y si mañana no anda, el que escribe es la sucursal
+que no puede registrar una venta. Además toca la base en el lugar más delicado: el movimiento
+guarda su fecha en una columna `timestamptz`, que Npgsql sólo acepta escribir en UTC. Si alguien
+cambiara la hora del registro por la local, la api contestaría 500 en el alta, y ningún unitario
+lo vería: no hay ninguna base en ellos que pueda rechazar la fecha.
+
+Y es la misma en las dos a propósito. La lectura de los colores, que viene más abajo, sólo vale
+si la integración prueba los endpoints que usa la e2e. Si la e2e de stock se pusiera roja y la
+integración no probara movimientos, su verde no diría nada sobre la api de stock, y le echaría
+la culpa al front sin motivo.
+
+### Los movimientos no se borran: se compensan
+
+Las categorías se crean y se borran. Los movimientos no se pueden borrar, y está bien que sea
+así: en un sistema de stock la historia no se borra, se compensa, como en un libro contable. Por
+eso las pruebas de stock registran una entrada y una venta de una unidad, y lo que comprueban
+al final es que la cantidad volvió a la de antes. En el historial de QA quedan los dos
+movimientos, identificados con una observación que empieza con `api` o `e2e`.
+
+Comprobé que las corridas repetidas no se ensucian entre sí: después de nueve corridas de la e2e
+seguidas contra QA, seguían las cuatro categorías del seed y el stock del producto en 11, igual
+que al empezar.
+
+### Nombre vacío: 409 y no 400
+
+El enunciado espera un 400 para el título vacío, que es lo que contesta la app de la cátedra.
+La mía contesta **409**, y el test fija eso. Lo comprobé antes de escribirlo: un nombre vacío da
+409, y sólo un pedido *sin* el campo da 400, por la validación automática.
+
+Pasa porque el middleware de errores traduce toda `ReglaNegocioException` a 409, en un solo
+lugar, y el nombre vacío se valida como regla de negocio. Es discutible: HTTP reserva el 409
+para conflictos con el estado de los datos —un prefijo repetido, una categoría con productos—, y
+un nombre vacío no es eso, es un dato inválido, que debería ser 400. No lo cambié: hacerlo
+bien es separar en toda la api los datos inválidos (400) de los conflictos (409), y eso cambia
+la respuesta de la api y la excepción que esperan cinco tests del TP5 con su tipo exacto.
+Queda anotado como deuda.
+
+### Qué no puse en cada suite
+
+La pirámide reparte lo que va en cada capa, y lo que ya prueba una capa de abajo no se repite
+arriba, donde cuesta más:
+
+- **En ninguna de las dos**: las reglas que ya cubren los unitarios del TP5 —normalizar el SKU,
+  la coherencia entre rol y local, la matriz de permisos por local, los claims del JWT, el
+  cálculo del stock resultante—. Ahí corren en milisegundos y prueban todos los bordes; una e2e
+  tardaría minutos en probar cada uno.
+- **En la integración**: nada de pantalla, y un solo caso de error. Las variantes del formato
+  del prefijo ya las prueba el unitario de `GeneradorSku`; acá alcanza con fijar una vez el
+  contrato del error.
+- **En la e2e**: las validaciones que hace el formulario solo. Con un nombre vacío el botón
+  *Guardar* ni se habilita, así que ese pedido nunca llega a la api, y la e2e está para probar
+  el camino entero. Por eso el error elegido es el prefijo repetido, que sí da la vuelta
+  completa.
+- **Productos y transferencias, afuera de las dos**: los productos no se borran, se dan de baja,
+  así que una prueba que los creara dejaría uno nuevo en cada corrida.
+
+## Integración y e2e no prueban lo mismo
+
+| | Qué ve | Qué no puede ver |
+|---|---|---|
+| Unitario (TP5) | una regla, sola | lo que contesta la base de verdad: en su lugar hay un doble |
+| Integración | que la api desplegada y su base se entienden | si la pantalla usa bien esa api |
+| E2E | el sistema entero, como lo usa una persona | lo que no recorren sus tres flujos |
+
+Juntas no dan sólo una alarma: dan un diagnóstico. Para la evidencia rompí **el front** a
+propósito, en un commit que toca sólo código de la app y nada de `e2e/`: renombré `nombre` a
+`name` en el tipo que el front manda al crear una categoría, como podría pasar en un refactor.
+TypeScript compiló, porque el contrato con el backend no está tipado de punta a punta, y los 31
+unitarios del front siguieron en verde, porque ninguno toca esa pantalla.
+
+La corrida:
+
+```
+build ✓ → deploy-qa ✓ (smoke verde) → integración ✓ → e2e ✗ → deploy-prod ni pidió aprobación
+```
+
+En la e2e fallaron los dos tests de categorías —también en su reintento— y pasó el de stock.
+El diagnóstico lo saqué del reporte rojo, no del código. La traza del test fallido, en su
+pestaña *Network*, muestra:
+
+```
+POST /api/categorias → 400
+  el navegador mandó: {"name":"e2e 1792547260080","prefijoSku":"TGCU00"}
+  la api contestó:    {"errors":{"Nombre":["The Nombre field is required."]}}
+```
+
+Leído con la tabla del §2.5: **integración verde y e2e roja quiere decir que el roto es el
+front.** A la api le hablé directo, con el nombre correcto del campo, y creó, encontró y borró
+en su base sin problema. La que no la usaba bien era la pantalla, que mandaba un campo que la
+api no conoce. Y el smoke en verde es parte del punto: el sistema respondía, y aun así no se
+podía dar de alta una categoría.
+
+Si hubiera roto la api, la integración habría quedado roja y la e2e **no habría corrido**: su
+`needs` no se cumple, y no tiene sentido gastar un navegador en confirmar algo que ya se sabe.
+Esa sería la otra fila de la tabla, y también dice algo: el roto es la api o la base.
+
+Lo que la cadena **no** ataja: lo que no recorren los tres flujos. Si mañana se rompe la
+transferencia entre locales, las dos suites siguen verdes.
+
+El arreglo fue revertir ese commit. La cadena completa volvió a verde y, con la aprobación,
+producción recibió la misma imagen que verificaron QA y las dos suites.
+
+## Por qué la integración amplia y no la estrecha
+
+La integración puede escribirse de dos formas. La *estrecha* arma la api adentro del pipeline,
+contra un Postgres descartable que nace y muere con la corrida. La *amplia*, la que elegí, le
+habla a la api ya desplegada en QA, con su base de verdad.
+
+| | Amplia (la mía) | Estrecha |
+|---|---|---|
+| Qué prueba además | que el despliegue quedó bien: la imagen, las variables, la cadena de conexión | — |
+| Configuración | ninguna nueva: QA ya existe | `WebApplicationFactory` y un Postgres como `services:` del job |
+| Cuándo avisa | después del deploy a QA, minutos más tarde | antes del deploy, y también en los PR |
+| Aislamiento | comparte QA con las demás corridas | cada corrida tiene su base |
+| De qué depende | de que Render y Neon estén arriba | sólo del runner |
+
+Elegí la amplia porque ya tenía QA ejecutando la imagen exacta de cada corrida: el mismo
+concepto con una fracción de la configuración, y probando además lo que la estrecha no puede,
+que es el despliegue. Lo que pierdo es feedback temprano: un error de la api se ve recién
+después del merge, y no en el PR.
+
+## El cold start, y el flaky que sí apareció
+
+QA está en el plan gratuito, que duerme los servicios sin tráfico. La e2e lo aguanta sin
+`sleep` y sin saltearse nada:
+
+- **Topes largos**: 60 segundos por test y 15 por aserción. Playwright espera lo que busca
+  hasta ese tope; no hay esperas fijas.
+- **Un reintento**, que absorbe una demora suelta de la red.
+- **QA ya está despierto** cuando la e2e arranca: el smoke y la integración le pegaron antes.
+
+Un **test flaky** es el que pasa y falla sin que cambie el código. Es peor que no tener test:
+cada rojo que «se arregla solo» entrena al equipo a ignorar el rojo, y el día que es de verdad
+nadie lo mira. El reintento no lo esconde: el reporte marca *flaky* cualquier test que pasó
+recién al reintentar, aunque la corrida quede verde.
+
+Y me pasó. En la primera corrida completa, la e2e de stock falló por timeout y pasó al
+reintentar: `2 passed · 1 flaky`. El log del intento fallido mostraba que el test buscaba
+`getByRole('row', { name: 'Cargando…' })`: había leído el SKU de la primera fila justo
+mientras la tabla recargaba, y tomó «Cargando…» como si fuera un SKU. Contra el compose local,
+que contesta en milisegundos, la carrera no aparecía nunca; contra Render, sí.
+
+No esperé a que se repitiera: el log ya decía que el problema era el test y no el plan gratuito.
+Ahora el test espera la respuesta del pedido que dispara el filtro, y a que la tabla deje de
+decir «Cargando…», antes de leer. Lo verifiqué contra QA, sin reintentos y repitiendo cada test
+tres veces: 9 de 9. La corrida siguiente dio `3 passed` en las dos suites.
+
+Por lo mismo las pruebas corren de a una (`workers: 1`): las dos suites usan la misma base y las
+dos mueven stock. En paralelo, los movimientos de una le cambiarían la cantidad a la otra a
+mitad de la cuenta.
+
+## La misma imagen del front en QA y en producción
+
+Se ve en Render: los dos fronts ejecutan `frontend:sha-<commit>`, con la misma etiqueta. Lo hizo
+posible el cambio del TP6, cuando la dirección del backend salió del `nginx.conf` y pasó a ser
+una plantilla que nginx completa al arrancar.
+
+| Adentro de la imagen, igual en los dos | Por variable del servicio, distinto en cada uno |
+|---|---|
+| el bundle de React, compilado con la api en el mismo origen | `BACKEND_URL`: la api de *su* entorno |
+| la plantilla de nginx con `${BACKEND_URL}` y `${DNS_RESOLVER}` | `DNS_RESOLVER` |
+| la configuración de nginx: caché, proxy, rutas de la SPA | `PORT` |
+
+## Límite conocido: un solo QA para todas las corridas
+
+**Qué es.** QA es uno solo y lo comparten todas las corridas. Con dos merges seguidos, la
+corrida B puede redesplegar QA mientras la integración o la e2e de la A todavía lo están
+usando. La ventana es más larga que en el TP6, porque ahora son dos jobs seguidos usando QA.
+
+**Cómo lo reconocería.** Un rojo en las pruebas de A que no es de mi código, o algo peor que no
+avisa: un verde que en parte probó la imagen de B. Para saberlo miro en Render qué imagen corre
+QA, y en *Actions* a qué hora corrió el `deploy-qa` de B: si fue con las pruebas de A en el
+medio, esas pruebas no valen. Si dudo de un rojo, desempatan las pruebas de B, que traen los dos
+cambios.
+
+**Qué haría.** Rechazar la A con el motivo escrito, si llega a pedir aprobación: la que vale es
+la B. Eso es mío, no lo hace el `concurrency`, que cancela lo que está en cola, y un job
+esperando aprobación no está en cola. Tampoco re-correría las pruebas de A, porque QA ya tiene la
+imagen de B. Y la regla que seguí todo el TP: **un merge por vez**, esperando a que la corrida
+anterior termine su integración y su e2e. Un equipo real lo resuelve con un entorno por corrida,
+que nace y se destruye con ella.
+
+## Dos decisiones del workflow
+
+**El smoke dejó de hacer login.** En el TP6 probaba la cadena entrando con la contraseña de la
+administradora, escrita en el script. La misma cadena —nginx, proxy, api, base— la recorre
+`/health` pedido a través del front, sin credenciales. El login de verdad lo prueba la e2e, que
+para eso está.
+
+**Los reportes duran hasta la defensa.** Cada suite publica su reporte como artefacto con su
+propio nombre, también cuando falla, y el resumen de la corrida dice cuántas pruebas pasaron,
+fallaron o se saltearon. La guía sugiere `retention-days: 7`; no lo puse, porque con eso el
+reporte de la corrida roja, que es un entregable, habría vencido antes de la corrección. Con el
+default de GitHub duran 90 días.
+
+## Problemas que encontré y cómo los resolví
+
+**El `pull` sin credenciales tenía trampa.** Al hacer `docker logout ghcr.io` antes del
+checkpoint, Docker contestó *Removing login credentials for ghcr.io*: tenía una sesión vieja
+del TP2. Sin el logout, el `pull` habría funcionado igual y no habría probado que los paquetes
+son públicos.
+
+**Un selector que no encontraba el filtro de local.** `getByLabel('Local')` no daba con el
+`<select>`, porque está *adentro* de su `<label>` y el texto de la etiqueta incluye las opciones.
+Lo encontré por su rol y su nombre accesible, `getByRole('combobox', { name: 'Local' })`, que es
+como lo anuncia un lector de pantalla.
+
+**`innerText` devuelve el texto como se ve.** El test buscaba la columna «Cantidad» y no la
+encontraba, porque el CSS pone los encabezados en mayúsculas e `innerText` devolvía
+«CANTIDAD». Con `textContent`, que lee el HTML sin estilos, anduvo. Agregué una aserción para
+que, si algún día falta la columna, el test lo diga en vez de comparar contra `NaN`.
+
+**Secrets que se cargaron vacíos.** La primera vez que cargué las credenciales de prueba, el
+comando que las extraía falló sin que se notara, y `gh secret set` aceptó un valor vacío sin
+quejarse. Lo vi porque mostré el largo de cada valor antes de mandarlo. Si no, recién lo habría
+visto en el pipeline, con la suite fallando al arrancar.
+
+**La api de QA dormida.** Varias veces el primer pedido a través del front dio 502 mientras la
+api se despertaba, que tardó unos 33 segundos. Por eso las pruebas tienen topes largos y el
+smoke reintenta, y por eso conviene despertar los dos entornos unos minutos antes de mostrarlos.
+
+## Declaración de uso de IA
+
+(pendiente: lo completo yo)
