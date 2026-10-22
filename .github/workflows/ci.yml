@@ -30,7 +30,7 @@ jobs:
         run: echo "Rama $RAMA · commit $GITHUB_SHA"
 
       - name: Bajar el código al runner
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Preparar el constructor que sabe cachear
         uses: docker/setup-buildx-action@v4
@@ -147,7 +147,7 @@ jobs:
         run: echo "Rama $RAMA · commit $GITHUB_SHA"
 
       - name: Bajar el código al runner
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Preparar el constructor que sabe cachear
         uses: docker/setup-buildx-action@v4
@@ -262,7 +262,7 @@ jobs:
 
     steps:
       - name: Bajar el código al runner
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Qué se va a desplegar
         run: echo "Commit $GITHUB_SHA · imágenes sha-$GITHUB_SHA"
@@ -349,7 +349,7 @@ jobs:
 
     steps:
       - name: Bajar el código al runner
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Preparar Node
         uses: actions/setup-node@v6
@@ -394,7 +394,7 @@ jobs:
 
     steps:
       - name: Bajar el código al runner
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Preparar Node
         uses: actions/setup-node@v6
@@ -457,7 +457,7 @@ jobs:
 
     steps:
       - name: Bajar el código al runner
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Qué se va a desplegar
         run: echo "Promoviendo a producción el commit $GITHUB_SHA, ya verificado en QA"
