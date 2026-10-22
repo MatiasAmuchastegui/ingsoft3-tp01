@@ -156,6 +156,20 @@ builder.Services.AddSwaggerGen(options =>
 // Endpoint de salud, que el TP6 va a necesitar para los health checks del deploy.
 builder.Services.AddHealthChecks().AddDbContextCheck<AppDbContext>("base-de-datos");
 
+// Sentry (TP9): la api le cuenta a un servicio de afuera qué falla y cuánto tarda cada pedido.
+//
+// El DSN es la dirección del proyecto en Sentry y llega por el entorno (SENTRY_DSN), no escrito
+// acá. Sólo producción lo tiene cargado: sin la variable —en QA, en la máquina de uno, en los
+// tests— la librería queda apagada y la api anda igual.
+//
+// Los errores le llegan aunque el middleware de abajo los atrape y devuelva un 500 prolijo: ese
+// middleware los registra con LogError, y Sentry escucha los logs de nivel Error.
+builder.WebHost.UseSentry(o =>
+{
+    o.Dsn = builder.Configuration["SENTRY_DSN"] ?? "";
+    o.TracesSampleRate = 1.0; // medir todos los pedidos: con este tráfico, la cuota sobra
+});
+
 var app = builder.Build();
 
 // ---------------------------------------------------------------------------
@@ -178,6 +192,10 @@ app.UseAuthorization();
 
 app.MapControllers();
 app.MapHealthChecks("/health");
+
+// TEMPORAL (TP9): un endpoint que falla a propósito, para ver un error llegar a Sentry desde
+// producción. Se saca al cerrar el práctico.
+app.MapGet("/api/falla", string () => throw new InvalidOperationException("Falla de prueba del TP9"));
 
 // ---------------------------------------------------------------------------
 // Migraciones y datos iniciales
