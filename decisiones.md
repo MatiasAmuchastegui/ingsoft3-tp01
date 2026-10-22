@@ -1263,3 +1263,60 @@ pasada, con preprod completo, dio *No changes* también en Render.
 ## Declaración de uso de IA
 
 (pendiente: lo completo yo)
+
+# Decisiones — TP9
+
+## El PR de Dependabot que mergeé
+
+Dependabot abrió trece PRs apenas entró el `dependabot.yml`. Mergeé el **#62**:
+`Microsoft.AspNetCore.Authentication.JwtBearer` de **8.0.10 a 8.0.32**, la librería que valida los
+tokens del login.
+
+Me animé por tres cosas. Es un **parche** en SemVer: no cambia ni la versión mayor ni la menor, y
+las notas de 8.0.11 a 8.0.32 son todas de mantenimiento de la rama 8.0, con correcciones y
+endurecimiento de seguridad, sin cambios que rompan. Toca **un solo archivo**, el `.csproj`. Y lo
+verificó la cadena entera: en el PR, los 53 unitarios con su umbral; después del merge, la
+integración y la e2e contra QA, que hacen login en cada prueba. Recién ahí lo aprobé para
+producción.
+
+Los otros doce no: casi todos son saltos de versión mayor (`vite` 5 → 8, `vitest` 2 → 5,
+`typescript` 5 → 7, `Identity.Core` 8 → 10, que pide .NET 10). El de `vitest` es el mismo
+conflicto del TP5: vitest nuevo necesita vite 6 o más.
+
+## El monitor y lo que mostró Sentry
+
+**El monitor tardó 5 minutos 33 segundos en avisar.** Suspendí la api de producción a las 23:19:04
+UTC y UptimeRobot marcó DOWN a las 23:24:37, con `503 Service Unavailable`. La reanudé, respondió a
+las 23:25:37 y el UP llegó a las 23:29:43. Los dos avisos llegaron por mail. Sin el monitor, me
+habría enterado cuando alguien se quejara.
+
+**La operación más usada es `GET /api/stock`**, con 18 pedidos en la sesión de uso, más que
+cualquier otra.
+**La más lenta es `POST /api/auth/login`**, con un P95 de 2,7 segundos (P50 de 786 ms), la única
+que además de ir a la base verifica una contraseña. Son tres pedidos nada más, así que el número
+es de una muestra chica.
+
+Lo más útil fue otra cosa: **casi todas las lecturas tardan lo mismo, unos 180 ms**, y cada
+consulta a la base tarda 176 ms con muy poca variación. La api corre en Oregon y la base en São
+Paulo, y cada consulta cruza el continente. Con ese dato abrí la tarjeta #66 del tablero.
+
+## Problemas que encontré
+
+**CodeQL encontró un bug en mi propio test del TP7.** La e2e de stock comparaba la cantidad con
+`` new RegExp(`^${antes + 1}(?!\d)`) ``, escrita con una sola barra. Adentro de un template literal,
+`\d` no es "un dígito" sino la letra `d`, así que la aserción aceptaba `12` cuando se esperaba `1`.
+Lo comprobé, lo corregí y verifiqué el test contra QA sin reintentos. Era un hallazgo de nivel
+*high* que ningún test podía ver, porque el que fallaba era el test.
+
+**Cuatro jobs del pipeline no declaraban `permissions`** y corrían con los permisos por defecto
+del token. Ahora cada uno declara sólo `contents: read`, y la cadena siguió en verde. Otros tres
+hallazgos quedaron abiertos: el *log forging* del middleware de errores y el mail del
+administrador en el log del seed. En esta app son de riesgo bajo.
+
+**Me preocupaba que reanudar producción la volviera a una imagen vieja.** En Render, cada servicio
+tiene configurada la imagen del primer merge del TP7, y un deploy disparado por Render usa ésa.
+Lo medí: reanudar no despliega, el servicio volvió con el mismo deploy que tenía.
+
+## Declaración de uso de IA
+
+(pendiente: lo completo yo)

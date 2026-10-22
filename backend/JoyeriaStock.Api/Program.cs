@@ -193,10 +193,6 @@ app.UseAuthorization();
 app.MapControllers();
 app.MapHealthChecks("/health");
 
-// TEMPORAL (TP9): un endpoint que falla a propósito, para ver un error llegar a Sentry desde
-// producción. Se saca al cerrar el práctico.
-app.MapGet("/api/falla", string () => throw new InvalidOperationException("Falla de prueba del TP9"));
-
 // ---------------------------------------------------------------------------
 // Migraciones y datos iniciales
 // ---------------------------------------------------------------------------
