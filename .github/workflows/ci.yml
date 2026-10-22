@@ -87,7 +87,7 @@ jobs:
           cat coveragereport/SummaryGithub.md >> $GITHUB_STEP_SUMMARY
 
       - name: Publicar coverage y resultados del backend
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         if: ${{ !cancelled() }}
         with:
           name: coverage-backend
@@ -203,7 +203,7 @@ jobs:
           " >> $GITHUB_STEP_SUMMARY
 
       - name: Publicar el coverage del frontend
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         if: ${{ !cancelled() }}
         with:
           name: coverage-frontend
@@ -380,7 +380,7 @@ jobs:
       # la defensa. Con los 7 de la guía, la evidencia de la corrida roja habría vencido antes.
       - name: Publicar el reporte de la integración
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report-integracion # distinto del de la e2e: dos iguales rompen la corrida
           path: frontend/playwright-report
@@ -424,7 +424,7 @@ jobs:
 
       - name: Publicar el reporte de la e2e
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report-e2e
           path: frontend/playwright-report
