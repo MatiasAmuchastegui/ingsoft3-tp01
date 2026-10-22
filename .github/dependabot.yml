@@ -1,0 +1,23 @@
+# Dependabot: las dependencias de la app, vigiladas (TP9).
+#
+# La mayor parte del código que ejecuta esta app no lo escribimos nosotros: son sus dependencias,
+# y las dependencias de ellas. Dependabot las compara contra las vulnerabilidades publicadas, avisa,
+# y abre los PR que las actualizan. Cada uno pasa por la misma cadena que cualquier otro cambio:
+# tests, cobertura con su umbral, build, y la integración y la e2e contra QA. Esa red es la que deja
+# mergear una actualización con confianza en vez de postergarla.
+version: 2
+updates:
+  - package-ecosystem: "nuget" # el backend: el .sln está directo en esta carpeta, que es lo que pide
+    directory: "/backend" #      Dependabot (no busca en subcarpetas; el .sln arrastra sus proyectos)
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "npm" # el frontend
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "github-actions" # las actions del pipeline también son dependencias
+    directory: "/"
+    schedule:
+      interval: "weekly"

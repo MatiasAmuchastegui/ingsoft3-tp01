@@ -124,10 +124,14 @@ test('una entrada suma al stock, y una venta lo deja como estaba', async ({ page
 
   // La celda puede traer pegada la pastilla «bajo»: por eso el número se compara sólo hasta
   // donde dejan de haber dígitos.
+  //
+  // Dos barras, no una: adentro de un template literal, \d no es «un dígito» sino la letra d,
+  // y la regex quedaba (?!d). Con eso, si se esperaba 1 y la pantalla mostraba 12, el test
+  // pasaba igual. Lo encontró CodeQL (js/useless-regexp-character-escape).
   await registrarMovimiento(page, fila, 'Entrada', `e2e ${Date.now()}`)
-  await expect(cantidad).toHaveText(new RegExp(`^${antes + 1}(?!\d)`)) // una más, a la vista
+  await expect(cantidad).toHaveText(new RegExp(`^${antes + 1}(?!\\d)`)) // una más, a la vista
 
   // La limpieza: el stock no se borra, se compensa. Y se comprueba que quedó como estaba.
   await registrarMovimiento(page, fila, 'Venta', `e2e ${Date.now()} (compensa)`)
-  await expect(cantidad).toHaveText(new RegExp(`^${antes}(?!\d)`))
+  await expect(cantidad).toHaveText(new RegExp(`^${antes}(?!\\d)`))
 })
