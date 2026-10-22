@@ -248,6 +248,10 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     runs-on: ubuntu-latest
+    permissions:
+      contents: read # sólo bajar el código. Sin este bloque el job corría con los permisos por
+      #                defecto del token, que pueden incluir escritura (lo marcó CodeQL). Lo que no
+      #                se nombra queda prohibido. Los hooks no usan el token: van por secrets.
 
     # El `environment` hace tres cosas: le da al job acceso a los secrets de ESE entorno
     # (los hooks de QA no son los de producción), deja el historial de despliegues en la
@@ -340,6 +344,8 @@ jobs:
     needs: deploy-qa
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read # sólo bajar el código: lo que no se nombra queda prohibido
 
     steps:
       - name: Bajar el código al runner
@@ -383,6 +389,8 @@ jobs:
     needs: integracion # si la api está rota, no se gasta un navegador en confirmarlo
     runs-on: ubuntu-latest
     timeout-minutes: 20 # si algo se cuelga, el job muere en vez de esperar horas
+    permissions:
+      contents: read # sólo bajar el código: lo que no se nombra queda prohibido
 
     steps:
       - name: Bajar el código al runner
@@ -427,6 +435,8 @@ jobs:
     needs: e2e
 
     runs-on: ubuntu-latest
+    permissions:
+      contents: read # sólo bajar el código: lo que no se nombra queda prohibido
 
     # Este entorno tiene un revisor obligatorio configurado en el repo. El job arranca y
     # se queda esperando: GitHub no corre ni el primer step hasta que alguien aprueba.
