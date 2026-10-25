@@ -620,11 +620,7 @@ sacaba falló. Lo vi revisando el largo de cada valor antes de seguir.
 
 ## Declaración de uso de IA
 
-En el TP7 le pedí a la IA (Claude) que hiciera todo el práctico: el cambio de los servicios de
-Render a imagen, las dos suites de pruebas, los jobs del pipeline, la rotura del front y su arreglo,
-el diagnóstico con la traza, este documento y la release. Yo aprobé el plan antes de que empezara,
-le di la API key de Render, y aprobé o rechacé cada despliegue a producción mirando antes la corrida
-en Actions.
+Usé IA (Claude) para escribir el código del TP7 —las dos suites de pruebas, los jobs nuevos del pipeline, la rotura del front y su arreglo— y para redactar este documento. La parte de las cuentas la hice yo con la ayuda de la IA, a la que le pedí un paso a paso para cada cosa: cambié la fuente de los cuatro servicios de Render a imagen,  cargué los secrets de las pruebas en el repo y armé la release v7.0.0. También aprobé y rechacé cada despliegue a producción mirando antes la corrida en Actions. El diagnóstico con la traza del reporte lo hizo la IA, y yo miré los resultados.
 
 ---
 
@@ -656,10 +652,7 @@ para la base. Por eso la cadena de conexión se arma sola y no se copia.
 
 ## Declaración de uso de IA
 
-Le pedí a la IA (Claude) que hiciera todo el TP8: instaló Terraform, escribió `infra/`, creó y
-destruyó preprod, hizo las pruebas de drift y de `prevent_destroy`, y redactó este documento. Yo
-creé la API key de Neon, aprobé el plan y le di permiso para crear y destruir preprod, y rechacé los
-dos despliegues a producción de este TP porque no cambiaban la app.
+Usé IA (Claude) para escribir el código del TP8 —los archivos de Terraform de infra/— y para redactar este documento. Lo que estaba por fuera del código lo hice yo con la ayuda de la IA, a la que le pedí un paso a paso: instalé Terraform, creé la API key de Neon, para que me ayudar si se me complicaba en algo, y busqué el org_id de mi organización, corrí el plan y el apply para crear preprod y después lo destruí, e hice las pruebas de drift y de prevent_destroy mirando en Neon y en Render que pasara lo que el plan decía. También rechacé los dos despliegues a producción de este TP porque no cambiaban la app.
 
 ---
 
@@ -696,8 +689,4 @@ pasó: volvió con el mismo deploy.
 
 ## Declaración de uso de IA
 
-Le pedí a la IA (Claude) que hiciera todo el TP9: el `dependabot.yml`, prender las protecciones,
-revisar los hallazgos de CodeQL, elegir y mergear el PR de Dependabot, crear el monitor y provocar
-la caída, agregar Sentry, crear la tarjeta y redactar este documento. Yo creé las cuentas de
-UptimeRobot y de Sentry con sus claves, hice el token para la demo del secreto bloqueado y después
-lo borré, revisé que me llegaran los mails del monitor, y aprobé o rechacé cada despliegue.
+Usé IA (Claude) para escribir el código del TP9 —el dependabot.yml, la integración de Sentry en la app y los arreglos de lo que marcó CodeQL— y para redactar este documento. Todo lo que pasaba por las páginas lo hice yo con la ayuda de la IA, a la que le pedí un paso a paso: prendí las protecciones de seguridad en GitHub, revisé los hallazgos de CodeQL, elegí y mergeé el PR de Dependabot, creé las cuentas de UptimeRobot y de Sentry con sus claves, armé el monitor y provoqué la caída suspendiendo producción en Render, creé la tarjeta en el tablero, e hice el token para la demo del secreto bloqueado y después lo borré. También revisé que me llegaran los mails del monitor y aprobé o rechacé cada despliegue.
