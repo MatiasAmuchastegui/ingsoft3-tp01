@@ -123,6 +123,15 @@ async function request<T>(ruta: string, init: RequestInit = {}): Promise<T> {
     return undefined as T
   }
 
+  // 502, 503 y 429 son lo que contesta Render mientras la api está dormida o despertándose. No
+  // traen ProblemDetails, así que sin esto la pantalla mostraría «Error 502» sin explicar nada.
+  if (respuesta.status === 502 || respuesta.status === 503 || respuesta.status === 429) {
+    throw new ApiError(
+      respuesta.status,
+      'El servidor se está despertando: esperá unos 30 segundos y probá de nuevo.',
+    )
+  }
+
   if (!respuesta.ok) {
     throw new ApiError(respuesta.status, await leerMensajeDeError(respuesta))
   }

@@ -1,16 +1,37 @@
-# Enlaces del TP7
+# Enlaces del TP6 y del TP7
 
-Van acá arriba porque viven afuera del repositorio y la corrección no los busca. Los del TP6
-siguen en su sección, más abajo.
+Van acá arriba porque viven afuera del repositorio, o son unas pocas corridas entre muchas: si no
+están acá, la corrección no los busca.
 
-**Las dos imágenes, públicas.** Cada merge a `main` publica una por commit, con la etiqueta
-`sha-<commit>` de 40 caracteres. La que corre en producción es la del commit al que apunta
-`v7.0.0`.
+**Los entornos, vivos hasta la defensa.** Las del formulario son las del front.
+
+| | Front | API (su chequeo de salud) |
+|---|---|---|
+| QA | https://joyeria-front-qa.onrender.com | https://ingsoft3-tp01-jx17.onrender.com/health |
+| Producción | https://joyeria-front-prod.onrender.com | https://ingsoft3-tp01-1.onrender.com/health |
+
+El plan gratuito duerme los servicios sin tráfico: el primer pedido después de un rato tarda
+alrededor de 30 segundos.
+
+**Las dos imágenes, públicas**, se bajan sin credenciales. Cada merge a `main` publica una por
+commit, con la etiqueta `sha-<commit>` de 40 caracteres.
 
 | | |
 |---|---|
 | Backend | https://github.com/MatiasAmuchastegui/ingsoft3-tp01/pkgs/container/ingsoft3-tp01-backend |
 | Frontend | https://github.com/MatiasAmuchastegui/ingsoft3-tp01/pkgs/container/ingsoft3-tp01-frontend |
+
+## TP6: la cadena
+
+| | |
+|---|---|
+| El job de un PR: «Entrar al registry» sale salteado y no se publica nada | https://github.com/MatiasAmuchastegui/ingsoft3-tp01/actions/runs/37992931367/job/114031489474 |
+| El mismo job en `main`: entra al registry y publica | https://github.com/MatiasAmuchastegui/ingsoft3-tp01/actions/runs/37993396090/job/114033099476 |
+| La primera corrida de `main`: QA desplegado y producción rechazada, con el motivo | https://github.com/MatiasAmuchastegui/ingsoft3-tp01/actions/runs/37993396090 |
+| La primera que llegó a producción, aprobada | https://github.com/MatiasAmuchastegui/ingsoft3-tp01/actions/runs/37996088210 |
+| Qué commit está en cada entorno y desde cuándo | https://github.com/MatiasAmuchastegui/ingsoft3-tp01/deployments |
+
+## TP7: integración verde y e2e roja
 
 **La corrida donde la integración quedó verde y la e2e roja**, y la promoción se frenó:
 
@@ -24,15 +45,9 @@ siguen en su sección, más abajo.
 **La corrida completa en verde después del arreglo, hasta producción:**
 https://github.com/MatiasAmuchastegui/ingsoft3-tp01/actions/runs/39531146035
 
-**Los entornos, vivos hasta la defensa:**
-
-| | Front | API |
-|---|---|---|
-| QA | https://joyeria-front-qa.onrender.com | https://ingsoft3-tp01-jx17.onrender.com |
-| Producción | https://joyeria-front-prod.onrender.com | https://ingsoft3-tp01-1.onrender.com |
-
-El plan gratuito duerme los servicios sin tráfico: el primer pedido después de un rato tarda
-alrededor de 30 segundos.
+`v7.0.0` apunta a `24c876a`, el commit que corría en producción al cerrar el TP7. En el TP8
+producción no se movió, y en el TP9 avanzó para llevar Sentry. Lo que corre hoy se ve en
+*Deployments*.
 
 # Decisiones — TP1
 
@@ -282,6 +297,9 @@ el cálculo del stock resultante, los destinos de una transferencia y el contado
 Así se prueba sin montar React. Una de las funciones recibe el cliente HTTP por parámetro, y el test
 le pasa un `vi.fn()` en lugar de una API de verdad.
 
+Los tests: [backend](https://github.com/MatiasAmuchastegui/ingsoft3-tp01/tree/v5.0.0/backend/JoyeriaStock.Tests) ·
+[frontend](https://github.com/MatiasAmuchastegui/ingsoft3-tp01/tree/v5.0.0/frontend/src/lib).
+
 ## El umbral y por qué ese número
 
 Puse **16% en el backend**, que mide 18,18% de línea y 20,98% de rama, y **90% en el frontend**, que
@@ -293,6 +311,11 @@ integración, no más unit tests. Lo elegí después de medir, y un poco por deb
 bajo y no por un cambio chico. El del front es alto porque mide poco: `src/lib` son funciones puras
 y están todas cubiertas.
 
+El umbral está en el [Dockerfile del backend](https://github.com/MatiasAmuchastegui/ingsoft3-tp01/blob/v5.0.0/backend/Dockerfile#L79-L80)
+y en el [`vite.config.ts`](https://github.com/MatiasAmuchastegui/ingsoft3-tp01/blob/v5.0.0/frontend/vite.config.ts#L37).
+El resumen de cobertura y los reportes para bajar están en
+[esta corrida](https://github.com/MatiasAmuchastegui/ingsoft3-tp01/actions/runs/37529263673).
+
 Un compañero tiene 82,7% y le pedí sus números para entender la diferencia. Su app no tiene services,
 la lógica está en los routers, y la cubre con tests de integración contra una base SQLite. No
 medimos lo mismo: el porcentaje solo no dice nada si no se sabe qué se está midiendo.
@@ -303,7 +326,8 @@ En el backend saqué el arranque (`Program`), las entidades y los DTOs, que son 
 migraciones, que las genera Entity Framework, y la configuración de la base y el seed. Los
 controllers los dejé adentro a propósito: sacarlos subía el número de 18,2% a 19,3%, pero son
 código mío. En el front hice al revés: con `include: ['src/lib/**']` digo qué entra, que es la
-lógica.
+lógica. Están en el [`Exclude` del backend](https://github.com/MatiasAmuchastegui/ingsoft3-tp01/blob/v5.0.0/backend/Dockerfile#L81)
+y en el [`include` del front](https://github.com/MatiasAmuchastegui/ingsoft3-tp01/blob/v5.0.0/frontend/vite.config.ts#L25).
 
 ## Por qué una cobertura alta no garantiza calidad
 
@@ -314,10 +338,12 @@ borde exacto. Sin ese test tenía 100% de cobertura sobre una regla que nadie ve
 
 ## El Pull Request bloqueado
 
-En el PR #32 agregué al front una función sin tests, `urgenciaDeReposicion`. Compilaba y los 22
+En el [PR #32](https://github.com/MatiasAmuchastegui/ingsoft3-tp01/pull/32) agregué al front una
+función sin tests, `urgenciaDeReposicion`. Compilaba y los 22
 tests pasaban, pero la cobertura de líneas bajó a 65% y el umbral de 90 puso `build-frontend` en
 rojo, así que no se podía mergear. Le agregué un test por cada caso y sus bordes, la cobertura
-volvió a 100% y el check pasó a verde.
+volvió a 100% y el check pasó a verde. La conversación del PR muestra la secuencia entera: rojo,
+tests, verde y merge.
 
 Corridas: [la roja](https://github.com/MatiasAmuchastegui/ingsoft3-tp01/actions/runs/37528845178) ·
 [la verde](https://github.com/MatiasAmuchastegui/ingsoft3-tp01/actions/runs/37529263673). El
@@ -326,7 +352,8 @@ propósito, como evidencia.
 
 ## El camino sin cubrir
 
-La línea 85 de `GeneradorSku.cs` está en 0%: es la que ignora los SKU viejos cuya parte numérica no
+La [línea 85 de `GeneradorSku.cs`](https://github.com/MatiasAmuchastegui/ingsoft3-tp01/blob/v5.0.0/backend/JoyeriaStock.Api/Application/Services/GeneradorSku.cs#L85)
+está en 0%: es la que ignora los SKU viejos cuya parte numérica no
 es un número, por ejemplo `RELCT-ABCD`. No le agregué test porque `GenerarAsync` consulta la base,
 así que probarlo ya es integración. Queda como deuda.
 
@@ -357,18 +384,7 @@ partir de esa medición: lo comparé con el de un compañero para entender por q
 
 # Decisiones — TP6
 
-## Enlaces de este TP
-
-| | |
-|---|---|
-| Imagen del backend | `ghcr.io/matiasamuchastegui/ingsoft3-tp01-backend` |
-| Imagen del frontend | `ghcr.io/matiasamuchastegui/ingsoft3-tp01-frontend` |
-| QA, en vivo | https://joyeria-front-qa.onrender.com |
-| Producción, en vivo | https://joyeria-front-prod.onrender.com |
-| La cadena entera, corriendo | https://github.com/MatiasAmuchastegui/ingsoft3-tp01/actions/runs/37993396090 |
-| Historial de despliegues | https://github.com/MatiasAmuchastegui/ingsoft3-tp01/deployments |
-
-Las dos imágenes son públicas: se bajan sin iniciar sesión.
+Los enlaces de este TP están arriba de todo, junto con los del TP7.
 
 ## Qué cambió
 
@@ -380,8 +396,13 @@ del anterior con `needs:`, así que si los tests fallan no se publica ni se desp
 
 Cada imagen se publica en ghcr.io con la etiqueta `sha-<commit>` y no con `latest`, porque `latest`
 cambia todo el tiempo y no dice qué hay adentro. Con el commit en la etiqueta sé exactamente qué
-código está corriendo. Se publican al final del job, después de los tests, y sólo desde `main`: en
-un PR ese paso sale salteado.
+código está corriendo.
+
+Se publica sólo con todo en verde, porque lo que está en el registry es lo que después se despliega.
+Si se publicara igual, que una imagen esté ahí ya no querría decir que pasó los tests. Lo aseguran
+tres cosas encadenadas: nada entra a `main` sin los checks en verde, sólo `main` publica, y publicar
+es el último paso del job que testea, así que si un test falla no se llega. En un PR el paso de
+entrar al registry sale salteado.
 
 ## La misma imagen en QA y en producción
 
@@ -396,7 +417,23 @@ push, sin esperar al CI ni a mi aprobación. El deploy lo dispara el pipeline co
 le paso `&ref=<commit>` para que despliegue exactamente el commit que pasó los tests.
 
 Una limitación: Render no usaba la imagen que publico, la volvía a construir desde el repo. Era el
-mismo commit, pero no el mismo archivo. Lo arreglé en el TP7.
+mismo commit, pero no el mismo archivo, así que perdía la garantía de que lo que corre es
+exactamente lo que pasó los tests. Lo arreglé en el TP7.
+
+## La cadena y los secrets
+
+Los jobs van `build-backend` y `build-frontend` → `deploy-qa` → `deploy-prod`, unidos con `needs:`.
+`deploy-qa` tiene un `if` para correr sólo en un push a `main`: un PR verifica, pero no despliega.
+Cada deploy declara su `environment`, `qa` o `production`. Desde el TP7, entre los dos están la
+integración y la e2e.
+
+Los deploy hooks son secrets de cada environment, no del repo: `RENDER_HOOK_API` y
+`RENDER_HOOK_FRONT` existen en `qa` y en `production`, con valores distintos. Un job sólo ve los
+secrets del environment que declara, así que el de QA no puede leer los hooks de producción, y el de
+producción los recibe recién después de la aprobación. Para publicar en ghcr no uso ningún secret
+mío: alcanza con el `GITHUB_TOKEN` que GitHub crea para cada corrida, y sólo los dos jobs de build
+tienen permiso para escribir paquetes. La cadena de conexión y la clave de los tokens no pasan por
+GitHub: son variables de cada servicio de Render.
 
 ## Los entornos están separados
 
@@ -408,7 +445,13 @@ creada sólo en producción no aparece en QA.
 
 QA se despliega solo y producción espera a un revisor, que soy yo. Eso es entrega continua: todo
 queda listo para producción, pero apretar el botón es una decisión. Si saco el revisor pasa a ser
-despliegue continuo, sin cambiar nada del workflow.
+despliegue continuo, sin cambiar nada del workflow. Elegí entrega continua porque un error en
+producción frena las ventas de los tres locales, y prefiero que alguien mire QA antes de pasarlo.
+
+Antes de aprobar miro que la corrida esté en verde hasta QA, con el smoke pasado (desde el TP7,
+también la integración y la e2e), que no haya entrado otro merge mientras tanto, porque QA es uno
+solo, y entro a QA a probar el login y el stock. Lo que no puedo ver desde ahí es cómo se va a
+portar con los datos y el uso de producción: para eso faltaba observabilidad, que llegó en el TP9.
 
 Rechacé la primera corrida con este motivo: *«Rechazo: es la primera corrida del pipeline de
 despliegue y QA recién terminó de levantar. Quiero verificar a mano el login y el listado de stock
@@ -421,11 +464,31 @@ Después de cada deploy, un script le pide al front y a la api que respondan, y 
 servicios gratis tardan en despertar. Prueba que el entorno responde, no que la versión nueva esté
 arriba: mientras Render levanta la nueva, la vieja sigue contestando.
 
-## Lo que medí
+## El plan gratuito
 
-De aprobar a tener producción verificada pasaron 56 segundos. En el rollback, Render tardó unos 11
-segundos en volver a la versión anterior, y la app no dejó de responder en ningún momento: Render
-deja el contenedor viejo hasta que el nuevo está listo.
+Render gratis duerme cada servicio después de 15 minutos sin tráfico, y despertarlo tarda unos 30
+segundos. Además, el workspace tiene 750 horas por mes para todos los servicios juntos, y los
+minutos de build también tienen un tope. El pipeline lo maneja así: el smoke espera 45 segundos y
+reintenta 30 veces cada 20, y nginx espera al backend hasta 75 segundos (`proxy_read_timeout`), para
+que el primer pedido no corte mientras la api se despierta. Desde el TP7 Render ya no construye
+nada, sólo baja la imagen, así que tampoco gasta minutos de build.
+
+## El patrón de deploy y el rollback
+
+Render hace un reemplazo sin corte: levanta la versión nueva, espera a que esté sana y recién ahí le
+pasa el tráfico. Para una producción de verdad elegiría blue-green: dos entornos iguales, y el
+tráfico se pasa de uno al otro, así que volver atrás es devolver el tráfico. Canary necesita
+repartir el tráfico entre dos versiones y métricas para compararlas, y hoy no tengo ninguna de las
+dos.
+
+Mi plan si producción se rompe después de aprobar: en Render, *Deploys* → el deploy anterior →
+*Rollback*, y después revertir el commit por PR, para que `main` vuelva a ser lo que corre. Lo
+probé: Render tardó unos 11 segundos y la app no dejó de responder en ningún momento, porque deja el
+contenedor viejo hasta que el nuevo está listo. El rollback vuelve el código, no la base: si la
+versión rota hubiera migrado o escrito datos mal, eso hay que arreglarlo aparte, por ejemplo
+restaurando la base desde el historial de Neon.
+
+De aprobar a tener producción verificada pasaron 56 segundos.
 
 ## Problemas encontrados y cómo los resolví
 
@@ -441,8 +504,12 @@ agregar `AplicarMigracionesAlArrancar` y `SembrarDatosIniciales` en `true`.
 El build del front empezó a fallar con `429 Too Many Requests` de Docker Hub, porque los runners de
 GitHub comparten IP. Lo resolví bajando las imágenes de Docker Hub por un espejo.
 
-Los servicios gratis se duermen: el primer pedido después de un rato tarda unos 30 segundos y a
-veces da 502.
+Once días después del primer deploy, el primer pedido por el front dio 502: las apis estaban
+dormidas. Preparando la defensa medí que por el front no se despiertan nunca: 150 segundos de
+intentos de login, todos 502. Render limita los despertares que vienen de sus propias IPs, y el
+front corre en Render. Un pedido de afuera, en cambio, despierta la api en unos 35 segundos. Lo
+resolví haciendo que el navegador, al abrir la app, le pegue directo a su api, y que la pantalla
+diga que el servidor se está despertando en lugar de «Error 502».
 
 ## Declaración de uso de IA
 
@@ -532,8 +599,9 @@ seguidas contra QA sin reintentos.
 
 ## La misma imagen del front en QA y en producción
 
-La imagen es la misma en los dos y lo único que cambia es la variable `BACKEND_URL` de cada
-servicio, que es lo que se armó en el TP6.
+La imagen es la misma en los dos. Adentro quedan el build de React y la plantilla de nginx. Lo que
+cambia va en las variables de cada servicio de Render: `BACKEND_URL`, la dirección de su api. Las
+otras dos, `DNS_RESOLVER` y `PORT`, son iguales en los dos entornos. Es lo que se armó en el TP6.
 
 ## Límite conocido: un solo QA
 

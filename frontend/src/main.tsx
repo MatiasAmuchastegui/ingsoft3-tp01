@@ -22,6 +22,11 @@ Sentry.init({
   tracesSampleRate: 1.0,
 })
 
+// Despierta la api desde el navegador apenas se abre la app (ver /despertar en la plantilla de
+// nginx): un pedido que sale del front no la despierta. `no-cors` porque la respuesta no se lee,
+// sólo importa que el pedido llegue. Si falla, no pasa nada: es sólo un empujón.
+fetch('/despertar', { mode: 'no-cors' }).catch(() => {})
+
 const contenedor = document.getElementById('root')
 if (!contenedor) throw new Error('No se encontró el elemento #root en index.html.')
 
