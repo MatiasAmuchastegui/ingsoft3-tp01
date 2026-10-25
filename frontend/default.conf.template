@@ -102,6 +102,19 @@ server {
         access_log off;
     }
 
+    # Para despertar la api desde el NAVEGADOR, no desde acá.
+    #
+    # En el plan gratis de Render la api se duerme, y un pedido que sale de este nginx no la
+    # despierta: Render limita los despertares que vienen de sus propias IPs, que comparten
+    # miles de servicios, y contesta 502 o 429 para siempre (medido: 150 s de login, todo 502).
+    # Un pedido que llega de afuera, en cambio, la despierta en unos 35 s.
+    #
+    # Por eso esto no hace proxy: le devuelve al navegador la dirección del /health de la api,
+    # y el navegador va solo. La app lo pide al abrirse (main.tsx).
+    location = /despertar {
+        return 302 $destino_api/health;
+    }
+
     # Estado de nginx mismo, para su propio healthcheck en el compose. No toca el backend:
     # responde aunque la api esté caída, que es justamente para lo que sirve.
     location = /nginx-health {

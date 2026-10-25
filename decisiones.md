@@ -506,7 +506,11 @@ El build del front empezó a fallar con `429 Too Many Requests` de Docker Hub, p
 GitHub comparten IP. Lo resolví bajando las imágenes de Docker Hub por un espejo.
 
 Once días después del primer deploy, el primer pedido por el front dio 502: las apis estaban
-dormidas y tardaron 33 segundos en despertar. No era un error de la app, era el plan gratis.
+dormidas. Preparando la defensa medí que por el front no se despiertan nunca: 150 segundos de
+intentos de login, todos 502. Render limita los despertares que vienen de sus propias IPs, y el
+front corre en Render. Un pedido de afuera, en cambio, despierta la api en unos 35 segundos. Lo
+resolví haciendo que el navegador, al abrir la app, le pegue directo a su api, y que la pantalla
+diga que el servidor se está despertando en lugar de «Error 502».
 
 ## Declaración de uso de IA
 
