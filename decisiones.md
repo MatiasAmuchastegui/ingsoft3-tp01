@@ -347,12 +347,11 @@ En mi máquina la etapa de tests del front decía que no había tests, porque Gi
 
 ## Declaración de uso de IA
 
-Usé IA (Claude) para casi todo el TP5: escribió los tests, sacó la lógica del front a `src/lib`,
-armó las etapas de tests de los Dockerfiles y los pasos del `ci.yml`, corrió el mutante y las
-pruebas de que el umbral frena, y redactó este documento. Yo le pedí que me explicara cada parte. El
-umbral lo discutimos hasta que entendí por qué el mío es 16 y no 75, y para eso le pedí a un
-compañero los números de su proyecto y los comparamos. También abrí el reporte de cobertura y
-mergeé los PR.
+Usé IA (Claude) para el código del TP5: escribió los tests, sacó la lógica del front a `src/lib` y
+armó las etapas de tests de los Dockerfiles y los pasos del `ci.yml`. También midió la cobertura,
+corrió el mutante y comprobó que el umbral frena, y redactó este documento. El umbral lo decidí yo a
+partir de esa medición: lo comparé con el de un compañero para entender por qué el mío daba 16 y no
+75. Todo lo que no era código lo hice yo.
 
 ---
 
