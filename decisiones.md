@@ -652,7 +652,7 @@ para la base. Por eso la cadena de conexión se arma sola y no se copia.
 
 ## Declaración de uso de IA
 
-Usé IA (Claude) para escribir el código del TP8 —los archivos de Terraform de infra/— y para redactar este documento. Lo que estaba por fuera del código lo hice yo con la ayuda de la IA, a la que le pedí un paso a paso: instalé Terraform, creé la API key de Neon, para que me ayudar si se me complicaba en algo, y busqué el org_id de mi organización, corrí el plan y el apply para crear preprod y después lo destruí, e hice las pruebas de drift y de prevent_destroy mirando en Neon y en Render que pasara lo que el plan decía. También rechacé los dos despliegues a producción de este TP porque no cambiaban la app.
+Usé IA (Claude) para escribir el código del TP8 —los archivos de Terraform de infra/— y para redactar este documento. Lo que estaba por fuera del código lo hice yo con la ayuda de la IA, a la que le pedí un paso a paso: instalé Terraform y busqué el org_id de mi organización, corrí el plan y el apply para crear preprod y después lo destruí, e hice las pruebas de drift y de prevent_destroy mirando en Neon y en Render que pasara lo que el plan decía. También rechacé los dos despliegues a producción de este TP porque no cambiaban la app.
 
 ---
 
